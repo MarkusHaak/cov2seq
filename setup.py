@@ -3,9 +3,30 @@
 import sys, os
 from setuptools import setup
 
-# ensure python version 3.5 or greater is used
-if (sys.version_info.major + .1 * sys.version_info.minor) < 3.8:
-	print('ERROR: please execute setup.py with python version >=3.8')
+# https://stackoverflow.com/questions/36187264
+def binaries_directory():
+    """Return the installation directory, or None"""
+    if '--user' in sys.argv:
+        paths = (site.getusersitepackages(),)
+    else:
+        py_version = '%s.%s' % (sys.version_info[0], sys.version_info[1])
+        paths = (s % (py_version) for s in (
+            sys.prefix + '/lib/python%s/dist-packages/',
+            sys.prefix + '/lib/python%s/site-packages/',
+            sys.prefix + '/local/lib/python%s/dist-packages/',
+            sys.prefix + '/local/lib/python%s/site-packages/',
+            '/Library/Python/%s/site-packages/',
+        ))
+
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    print('no installation path found', file=sys.stderr)
+    return None
+
+# ensure python version 3.7 or greater is used
+if (sys.version_info.major + .1 * sys.version_info.minor) < 3.7:
+	print('ERROR: please execute setup.py with python version >=3.7')
 	sys.exit(1)
 
 # get version string from seperate file
@@ -25,9 +46,6 @@ DESCR = '''Comprehensive reports for Nanopore/Illumina/Sanger sequencing experim
 with open('README.md', 'rb') as readme:
 	LONG_DESCR = readme.read().decode()
 
-# check if defaults for user, host and dest are set for file transfer
-setup_dir = os.path.dirname(os.path.abspath(__file__))
-
 setup(name='cov2seq',
 	  version=__version__,
 	  description=DESCR,
@@ -37,9 +55,23 @@ setup(name='cov2seq',
 	  author_email='markus.haak@posteo.net',
 	  license='GPL',
 	  packages=['cov2seq'],
-	  install_requires=['Biopython', 'vcf', 'numpy', 'pandas', 'matplotlib'],
+	  install_requires=['Biopython', 'pyvcf', 'numpy', 'pandas', 'matplotlib'],
 	  include_package_data=True,
 	  zip_safe=False,
 	  entry_points={"console_scripts": ['cov2seq-update = cov2seq.main:update',
-	  									'cov2seq-report = cov2seq.main:report']})
-#	  scripts=['bin/cov2seq'])
+	  									'cov2seq-report = cov2seq.main:report']},
+	  data_files=[('cov2seq', ['cfg/cov2seq.cfg'])])
+
+site_packages_dir = binaries_directory()
+if site_packages_dir:
+	pkg_dir = "cov2seq-{}-py{}.egg".format(__version__, sys.version_info.major + .1 * sys.version_info.minor)
+	default_cfg = os.path.join(site_packages_dir, pkg_dir, "cov2seq", "cov2seq.cfg")
+	user_cfg = os.path.join(os.path.expanduser('~'), "cov2seq.cfg")
+	print(default_cfg)
+	if os.path.exists(default_cfg):
+		print("\nINFO: default configuration file is found under {}".format(default_cfg))
+		print("If (partial) configurations are given in user config file {}, they are prioritized.".format(user_cfg))
+	else:
+		print("\nWARNING: default configuration file not found under {}".format(default_cfg))
+		print("Please supply all configurations found in configuration file \"{}\" in a user configuration file under {}".format("cov2seq.cfg", user_cfg))
+

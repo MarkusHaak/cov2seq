@@ -23,4 +23,5 @@ def report():
 	print("report")
 
 if __name__ == '__main__':
-	print('main')
+	print('''This script is not intended for standalone command-line use. 
+		     Please install package and use cov2seq-update or cov2seq-report instead.''')
