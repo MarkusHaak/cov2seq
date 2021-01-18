@@ -1,10 +1,18 @@
 import os
 import sys
 import configparser
-import logging
 import pathlib
 import pkg_resources
 import argparse
+from .report import create_sample_reports
+
+import logging
+logger = logging.getLogger()
+shandler = logging.StreamHandler()
+formatter = logging.Formatter('%(levelname)s: %(message)s')
+shandler.setFormatter(formatter)
+logger.addHandler(shandler)
+logger.setLevel(logging.DEBUG)
 
 class ArgHelpFormatter(argparse.HelpFormatter):
     '''
@@ -54,15 +62,15 @@ def read_configuration(argv, pkg_dir, defaults=None):
     if os.path.exists(default_cfg):
         update_defaults(default_cfg)
     else:
-        logging.warning("Package-default configuration file not found.")
+        logger.warning("Package-default configuration file not found.")
     if os.path.exists(user_cfg):
         update_defaults(user_cfg)
     else:
-        logging.debug("No user configuration file found at {}.".format(user_cfg))
+        logger.debug("No user configuration file found at {}.".format(user_cfg))
     if os.path.exists(local_cfg):
         update_defaults(local_cfg)
     else:
-        logging.debug("No local configuration file {} found.".format(local_cfg))
+        logger.debug("No local configuration file {} found.".format(local_cfg))
     if args.conf_file:
         update_defaults(args.config_file)
 
@@ -80,9 +88,9 @@ def add_main_group_to_parser(parser):
     main_group.add_argument('--sanger_dir',
         help='''base directory containing sample-named sub-directories of sanger data. 
              The directory tree must be <sanger_dir>/<sample_name>/*-<primer_id>.ab1''')
-    main_group.add_argument('--reference',
+    main_group.add_argument('--reference_fn',
         help='Fasta file containing the reference sequence used in the artic pipeline.')
-    main_group.add_argument('--reference_annotation',
+    main_group.add_argument('--reference_annotation_fn',
         help='.json file with basic gene annotation information.')
     main_group.add_argument('--primer_schemes_dir',
         help='''Direcotry containing the primer scheme files in a directory tree as follows:
@@ -91,10 +99,45 @@ def add_main_group_to_parser(parser):
         help='''Directory for saving sample results.''')
     main_group.add_argument('--nextstrain_ncov',
         help='''Path to the directory containing the Nextstrain ncov git repository. This should
-             be updated regularly for accurate clade assignment.''')
+             be updated regularly for latest clade assignments.''')
     return parser
 
+def check_arguments(args):
+    args.nanopore_dir = os.path.expanduser(args.nanopore_dir)
+    args.primer_schemes_dir = os.path.expanduser(args.primer_schemes_dir)
+    args.results_dir = os.path.expanduser(args.results_dir)
+    args.nextstrain_ncov = os.path.expanduser(args.nextstrain_ncov)
+    args.reference_fn = os.path.expanduser(args.reference_fn)
+    args.reference_annotation_fn = os.path.expanduser(args.reference_annotation_fn)
+    args.illumina_dir = os.path.expanduser(args.illumina_dir)
+    args.sanger_dir = os.path.expanduser(args.sanger_dir)
+    for arg in [args.nanopore_dir,
+                args.primer_schemes_dir,
+                args.results_dir,
+                args.nextstrain_ncov]:
+        if not os.path.isdir(arg):
+            logger.error('Directory {} does not exist but is required.'.format(arg))
+            exit(1)
+        if not os.access(arg, os.W_OK):
+            logger.error('Write permissions required for directory {}'.format(arg))
+            exit(1)
+    for arg in [args.reference_fn,
+                args.reference_annotation_fn]:
+        if not os.path.isfile(arg):
+            logger.error('File {} does not exist but is required.'.format(arg))
+            exit(1)
+    for arg in [args.illumina_dir,
+                args.sanger_dir]:
+        if not os.path.isdir(arg):
+            logger.warning('Directory {} does not exist.'.format(arg))
+        else:
+            if not os.access(arg, os.W_OK):
+                logger.error('Write permissions required for directory {}'.format(arg))
+                exit(1)
+    return args
+
 def add_help_group_to_parser(parser):
+    pkg_dir, pkg_version, pkg_descr = get_package_info()
     help_group = parser.add_argument_group('Help')
     help_group.add_argument('--version', 
         action='version',
@@ -126,13 +169,13 @@ def init_parser(argv, defaults, script_descr=""):
         add_help=False)
     parser.set_defaults(**defaults)
 
-    return add_main_group_to_parser(parser)
+    return add_main_group_to_parser(parser), remaining_argv
 
 def update(argv=None):
     if argv is None:
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
-    parser = init_parser(argv, defaults)
+    parser, remaining_argv = init_parser(argv, defaults)
 
 
 
@@ -144,12 +187,23 @@ def report(argv=None):
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
     script_descr = "This script creates comprehensive reports for one or several samples."
-    parser = init_parser(argv, defaults, script_descr)
+    parser, remaining_argv = init_parser(argv, defaults, script_descr)
 
-    
+    report_group = parser.add_argument_group('Report Option Group')
+    report_group.add_argument('-s', '--samples',
+        help='Relative glob patterns matching sample names present in <nanopore_dir> directory.',
+        nargs='+',
+        required=True)
+    report_group.add_argument('--repeat_assignment',
+        help='Repeat the clade assignment even if a clade assignment was already once performed.',
+        action='store_true')
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
+    args = check_arguments(args)
+
+
+    create_sample_reports(args)
 
 if __name__ == '__main__':
     print('''This script is not intended for standalone command-line use. 
