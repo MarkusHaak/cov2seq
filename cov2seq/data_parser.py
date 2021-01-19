@@ -154,14 +154,17 @@ def load_primer_schemes(primer_schemes_dir, primer_schemes):
 def load_clades_info(nextstrain_ncov):
     logger.info('Loading nextstrain clades information.')
     clades_fn = os.path.join(nextstrain_ncov, "defaults", "clades.tsv")
+    subclades_fn = os.path.join(nextstrain_ncov, "defaults", "subclades.tsv")
     clades_df = pd.read_csv(clades_fn, sep="\t", header=0, skip_blank_lines=True).dropna()
-    clades = list(clades_df['clade'].drop_duplicates())
-    clades.sort()
-    for i,clade in enumerate(clades):
-        clades_df.loc[clades_df['clade'] == clade, 'color'] = "C{}".format(i+1)
-    return clades_df
+    subclades_df = pd.read_csv(clades_fn, sep="\t", header=None, skip_blank_lines=True).dropna()
+    #clades = list(clades_df['clade'].drop_duplicates())
+    #clades.sort()
+    #for i,clade in enumerate(clades):
+    #    clades_df.loc[clades_df['clade'] == clade, 'color'] = "C{}".format(i+1)
+    return clades_df, subclades_df
 
 def cov_from_sorted_bam(bam_fn, cov_fn):
+    logger.debug("Extracting coverage from {} using bedtools".format(bam_fn))
     if os.path.exists(cov_fn):
         if not os.access(bam_fn, os.W_OK):
             logger.error('Write permissions required for file {}'.format(cov_fn))
@@ -174,7 +177,7 @@ def cov_from_sorted_bam(bam_fn, cov_fn):
     cmds = []
     cmd = 'bedtools genomecov -d -ibam {} > {}'.format(bam_fn, cov_fn)
     cmds.append(cmd)
-    cmd = "chmod -R g+w {}".format(fn)
+    cmd = "chmod -R g+w {}".format(cov_fn)
     cmds.append(cmd)
     for cmd in cmds:
         retval = os.system(cmd)
@@ -184,43 +187,44 @@ def cov_from_sorted_bam(bam_fn, cov_fn):
 
 def get_coverage_from_bam(bam_fn):
     cov_fn = bam_fn + '.cov'
-    if not os.path.exists(bam_fn):
-        cov_fn = cov_from_sorted_bam(bam_fn, cov_fn)
+    if not os.path.exists(cov_fn):
+        cov_from_sorted_bam(bam_fn, cov_fn)
     return np.genfromtxt(cov_fn, delimiter='\t', usecols=(2), dtype=np.int32)
 
 def get_nanopore_coverage(sample, artic_runs):
     artic_dir = artic_runs.loc[sample, 'artic_dir']
-    bam_fn = os.path.join(artic_dir, "{}.sorted.bam.cov".format(sample))
+    bam_fn = os.path.join(artic_dir, "{}.sorted.bam".format(sample))
     return get_coverage_from_bam(bam_fn)
 
 def get_nanopore_coverage_trimmed(sample, artic_runs):
     artic_dir = artic_runs.loc[sample, 'artic_dir']   
-    bam_fn = os.path.join(artic_dir, "{}.trimmed.rg.sorted.bam.cov".format(sample))
+    bam_fn = os.path.join(artic_dir, "{}.trimmed.rg.sorted.bam".format(sample))
     return get_coverage_from_bam(bam_fn)
 
 def get_nanopore_coverage_primertrimmed(sample, artic_runs):
     artic_dir = artic_runs.loc[sample, 'artic_dir']
-    bam_fn = os.path.join(artic_dir, "{}.primertrimmed.rg.sorted.bam.cov".format(sample))
+    bam_fn = os.path.join(artic_dir, "{}.primertrimmed.rg.sorted.bam".format(sample))
     return get_coverage_from_bam(bam_fn)
 
 def get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference):
+    artic_dir = artic_runs.loc[sample, 'artic_dir']
     sample_schemes = nanopore_runs.loc[sample, 'scheme']
     if type(sample_schemes) == str:
         sample_schemes = [sample_schemes]
     else:
         sample_schemes = list(sample_schemes.drop_duplicates())
-    coverage_pool = {scheme: {} for scheme in sample_schemes}
+    coverage_pools = {scheme: {} for scheme in sample_schemes}
     for scheme in sample_schemes:
         for pool in list(amplicons[scheme]['pool'].drop_duplicates()):
 
             bam_fn = os.path.join(artic_dir, "{}.primertrimmed.{}.sorted.bam".format(sample, pool))
             if os.path.exists(bam_fn):
-                coverage_pool[scheme][pool] = get_coverage_from_bam(bam_fn)
+                coverage_pools[scheme][pool] = get_coverage_from_bam(bam_fn)
             else:
                 logger.warning(('Bam file {} missing. Coverage of primer scheme {} pool {} ' + \
                                 'will be displayed as zero which might not be the case.').format(bam_fn, scheme, pool))
-                coverage_pool[scheme][pool] = np.zeros(shape=(len(reference.seq),), dtype=np.int32)
-    return coverage_pool
+                coverage_pools[scheme][pool] = np.zeros(shape=(len(reference.seq),), dtype=np.int32)
+    return coverage_pools
 
 def get_nanopore_coverage_mask(sample, artic_runs):
     artic_dir = artic_runs.loc[sample, 'artic_dir']
@@ -267,7 +271,7 @@ def get_illumina_coverage_and_mappings(sample, illumina_dir, reference):
                                     np.sum(coverage)))
     mapped_illumina = pd.DataFrame(mapped_illumina, 
                                    columns=['bam_file', 'mapped_reads', 'mapped_bases'])
-    mapped_illumina = mapped_illumina.set_index('bam_file', keep=False)
+    mapped_illumina = mapped_illumina.set_index('bam_file', append=False)
     return coverage_illumina, mapped_illumina
 
 def approximate_sanger_coverage(sample, sanger_dir, reference, amplicons, primers):
@@ -441,11 +445,11 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     if os.path.exists(sample_final_consensus):
         alignment = mafft([sample_final_consensus], reference_fn)
         vcf_confirmed = variants_from_alignment(alignment, [sample]).loc[sample]
-        vcf_confirmed['confirmation'] = True
-        vcf_confirmed = vcf_confirmed['confirmation'].to_frame()
+        vcf_confirmed['decision'] = True
+        vcf_confirmed = vcf_confirmed['decision'].to_frame()
         vcf_confirmed.columns = pd.MultiIndex.from_product([['final'], vcf_confirmed.columns])
     else:
-        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final'],['confirmation']]))
+        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final'],['decision']]))
 
     # merge information from individual vcf files to one table
     if not vcf_medaka.loc[vcf_longshot_bias.index.drop_duplicates()].index.equals(vcf_longshot_bias.index):

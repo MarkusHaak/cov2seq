@@ -1,0 +1,81 @@
+<html>
+  <head>
+    <style type="text/css">
+      body {
+        background: lightgray;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      h1 {
+        font-size: 2em;
+        padding-top: 1em;
+        margin: 1em;
+      }
+      h2 {
+        font-size: 1.5em;
+        padding-top: 1em;
+        margin: 1em;
+      }
+      p {
+        font-size: 1em;
+        margin-left: 1em;
+      }
+      table {
+        border-collapse: collapse;
+        font-size: 1.2em;
+        margin-left: 2em;
+      }
+      td, th {
+        border: 1px solid #999;
+        padding: 0.2rem;
+      }
+      td {
+        text-align: right;
+        font-family: "Lucida Console", "Courier New", monospace;
+      }
+      th {
+        text-align: left;
+      }
+      tbody tr:nth-child(odd) {
+        background: #eee;
+      }
+      table {
+        font-size: 10px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+      }
+      .content {
+        width: 70% !important;
+        margin: auto;
+        background: white;
+      }
+      .subtext {
+        font-size: 0.9em;
+        padding: 1em;
+      }
+    </style>
+    <title>{{ sample }}</title>
+  </head>
+
+  <body>
+  <div class="content">
+    <!-- Page content -->
+    <h1>{{ header }}</h1>
+
+    <img src="{{ summary_plot_fn }}" alt="summary plot">
+
+    <div class="subtext"><b>Figure 1:</b> Summary plot showing the coverage for each sequencing technology and each individual Nanopore amplicon. Regions with a coverage of <{{ threshold_low }} nanopore reads are highlighted in orange. Regions with a coverage of <{{ threshold_limit }} nanopore reads are highlighted in red and the count of afflicted bases is displayed on the top of the figure. Potential variants are displayed below the figure outline. The color of the line indicating each variant's location is green if the potential variant passed the ARITC snv-filter and red otherwise. The text color is green if a given variant is present in the final consensus sequence for this sample. Otherwise it is blue if the variant is known to be associated with any one of the SARS-CoV2 clades defined by Nextstrain. The default text color is black.</div>
+
+    <h2>Datasets</h2>
+
+    {{ nanopore_runs_table }}
+
+    <h2>Potential Variants</h2>
+
+    {{ snv_table }}
+
+
+  </div>
+  </body>
+</html>

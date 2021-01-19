@@ -36,11 +36,15 @@ def get_package_info():
     pkg_descr = list(pkg_res._get_metadata(pkg_res.PKG_INFO))[-2]
     return pkg_dir, pkg_version, pkg_descr
 
-def read_configuration(argv, pkg_dir, defaults=None):
+def read_configuration(argv, pkg_dir, defaults=None, fields=None):
     def update_defaults(conf_file):
         config = configparser.SafeConfigParser()
         config.read([conf_file])
-        defaults.update(dict(config.items("DEFAULT")))
+        data_fields = ['DEFAULT']
+        if fields:
+            data_fields += fields
+        for field in data_fields:
+            defaults.update(dict(config.items(field)))
 
     if defaults is None:
         defaults = {}
@@ -149,14 +153,14 @@ def add_help_group_to_parser(parser):
         help='Show this help message and exit.')
     return parser
 
-def init_parser(argv, defaults, script_descr=""):
+def init_parser(argv, defaults, script_descr="", fields=[]):
     pkg_dir, pkg_version, pkg_descr = get_package_info()
     
     nextstrain_ncov = os.path.join(pkg_dir, 'ncov')
     if os.path.exists(nextstrain_ncov):
         defaults.update({'nextstrain_ncov' : nextstrain_ncov})
 
-    conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults)
+    conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults, fields)
 
     descr = pkg_descr
     if script_descr:
@@ -178,7 +182,6 @@ def update(argv=None):
     parser, remaining_argv = init_parser(argv, defaults)
 
 
-
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
 
@@ -187,7 +190,7 @@ def report(argv=None):
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
     script_descr = "This script creates comprehensive reports for one or several samples."
-    parser, remaining_argv = init_parser(argv, defaults, script_descr)
+    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, fields=['REPORT'])
 
     report_group = parser.add_argument_group('Report Option Group')
     report_group.add_argument('-s', '--samples',
@@ -197,13 +200,22 @@ def report(argv=None):
     report_group.add_argument('--repeat_assignment',
         help='Repeat the clade assignment even if a clade assignment was already once performed.',
         action='store_true')
+    report_group.add_argument('--threshold_limit',
+        help='''Minimal acceptable nanopore coverage. Regions with a coverage below this 
+                this threshold are highlighted red.''',
+        type=int)
+    report_group.add_argument('--threshold_low',
+        help='''Minimal acceptable nanopore coverage to assume that variant calling based on nanopore 
+                data alone works sufficiently well. Regions with a coverage below this 
+                this threshold are highlighted orange.''',
+        type=int)
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
     args = check_arguments(args)
 
-
-    create_sample_reports(args)
+    pkg_dir,_,_ = get_package_info()
+    create_sample_reports(args, pkg_dir)
 
 if __name__ == '__main__':
     print('''This script is not intended for standalone command-line use. 

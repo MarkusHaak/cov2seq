@@ -79,9 +79,21 @@ def get_masked_bases(fasta_fn):
     n_sites = np.pad(n_sites, [(1,1)], constant_values=0)
     mask = np.where(n_sites[1:] != n_sites[:-1])[0]
     mask = mask.reshape((mask.shape[0]//2, 2))
-    mask[:,0] += 1
+    mask[:,0] += 1 # 1-based, inclusive
     df = pd.DataFrame(mask, columns=['start', 'end'])
+    df['width'] = df['end'] - df['start'] + 1
     total_bases = np.sum(n_sites)
+    return df, total_bases
+
+def get_low_coverage_regions(cov, threshold):
+    below = (cov < threshold).astype(np.int16)
+    below = np.pad(below, [(1,1)], constant_values=0)
+    mask = np.where(below[1:] != below[:-1])[0]
+    mask = mask.reshape((mask.shape[0]//2, 2))
+    mask[:,0] += 1 # 1-based, inclusive
+    df = pd.DataFrame(mask, columns=['start', 'end'])
+    df['width'] = df['end'] - df['start'] + 1
+    total_bases = np.sum(below)
     return df, total_bases
 
 def dataset_completion_test(sample, artic_runs, nanopore_runs, amplicons):

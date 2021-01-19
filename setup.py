@@ -73,12 +73,13 @@ setup(name='cov2seq',
       author_email='markus.haak@posteo.net',
       license='GPL',
       packages=['cov2seq'],
-      install_requires=['Biopython', 'pyvcf', 'numpy', 'pandas', 'matplotlib', 'nextstrain-augur'],
+      install_requires=['Biopython', 'pyvcf', 'numpy', 'pandas', 'matplotlib', 'nextstrain-augur', 'Jinja2'],
       include_package_data=True,
       zip_safe=False,
       entry_points={"console_scripts": ['cov2seq-update = cov2seq.main:update',
                                         'cov2seq-report = cov2seq.main:report']},
-      data_files=data_files)
+      data_files=data_files,
+      package_data={'cov2seq': ['templates/report.html']})
 
 site_packages_dir = binaries_directory()
 if site_packages_dir:
