@@ -17,12 +17,16 @@
       }
       p {
         font-size: 1em;
-        margin-left: 1em;
+        padding-left: 2em;
+        padding-right: 2em;
       }
       table {
         border-collapse: collapse;
         font-size: 1.2em;
         margin-left: 2em;
+        margin-bottom: 2em;
+        padding-bottom: 2em;
+        font-size: 0.7em;
       }
       td, th {
         border: 1px solid #999;
@@ -38,21 +42,22 @@
       tbody tr:nth-child(odd) {
         background: #eee;
       }
-      table {
-        font-size: 10px;
-      }
       img {
         width: 100%;
         height: auto;
       }
       .content {
-        width: 70% !important;
+        width: 85% !important;
         margin: auto;
         background: white;
       }
       .subtext {
         font-size: 0.9em;
-        padding: 1em;
+        padding-left: 2em;
+        padding-right: 2em;
+      }
+      .table-hover tbody tr:hover td, .table-hover tbody tr:hover th {
+        background: #ee9;
       }
     </style>
     <title>{{ sample }}</title>
@@ -67,14 +72,37 @@
 
     <div class="subtext"><b>Figure 1:</b> Summary plot showing the coverage for each sequencing technology and each individual Nanopore amplicon. Regions with a coverage of <{{ threshold_low }} nanopore reads are highlighted in orange. Regions with a coverage of <{{ threshold_limit }} nanopore reads are highlighted in red and the count of afflicted bases is displayed on the top of the figure. Potential variants are displayed below the figure outline. The color of the line indicating each variant's location is green if the potential variant passed the ARITC snv-filter and red otherwise. The text color is green if a given variant is present in the final consensus sequence for this sample. Otherwise it is blue if the variant is known to be associated with any one of the SARS-CoV2 clades defined by Nextstrain. The default text color is black.</div>
 
-    <h2>Datasets</h2>
+    <h2>Nanopore Datasets</h2>
+
+    <p>ARTIC stats</p>
+
+    {{ artic_stats_table }}
+
+    <p>Nanopore runs, sample barcodes and ARTIC guppyplex filter parameters</p>
 
     {{ nanopore_runs_table }}
 
-    <h2>Potential Variants</h2>
+    <h2>Potential variants</h2>
+
+    <p>A total of <b>{{ medaka_variant_SNVs|e }}</b> potential SNVs (<b>{{ unique_medaka_variant_SNVs|e }}</b> unique) detected by Medaka variant were passed to longshot for further filtering. Thereof, <b>{{ longshot_SNVs }}</b> met the longshot criteria for being considered potential variants. These are displayed in the table below, in addition to variants that were manually introduced to the final fasta file, if present.</p>
 
     {{ snv_table }}
 
+    <h2>Nextstrain clade assignment</h2>
+
+    <p>Assignment produced by Nextstrain's assign_clade.py script: <b>{{ clade_assignment|e }}</b>, parent clade: {{ parent_clade|e }}</p>
+
+    {% if final %}
+    <h2>N-masked regions</h2>
+
+    <p>In total, <b>{{ masked_bases }}</b> bases in the final consensus sequence are masked (N in consensus sequence). The table beneath lists all masked regions.</p>
+
+    {{ masked_regions_table }}
+    {% endif %}
+
+    <h2>Software versions</h2>
+
+    {{ software_versions_table }}
 
   </div>
   </body>

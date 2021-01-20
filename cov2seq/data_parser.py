@@ -77,7 +77,7 @@ def load_nanopore_info(samples, nanopore_dir):
         retval = subprocess.check_output(
             ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".primertrimmed.rg.sorted.bam")])
         mapped_primertrimmed = int(retval.decode("utf-8").strip())
-        artic_runs_data.append( (sample, data_dir, len(sample_schemes), len(runs_info), mapped, mapped_trimmed, mapped_primertrimmed) )
+        artic_runs_data.append( (sample, data_dir, len(sample_schemes), len(nanopore_runs_data), mapped, mapped_trimmed, mapped_primertrimmed) )
 
     nanopore_runs = pd.DataFrame(nanopore_runs_data, 
                                  columns=['sample', 'scheme', 'run', 'barcode', 'min_qual', 'min_len', 'max_len'])
@@ -156,7 +156,7 @@ def load_clades_info(nextstrain_ncov):
     clades_fn = os.path.join(nextstrain_ncov, "defaults", "clades.tsv")
     subclades_fn = os.path.join(nextstrain_ncov, "defaults", "subclades.tsv")
     clades_df = pd.read_csv(clades_fn, sep="\t", header=0, skip_blank_lines=True).dropna()
-    subclades_df = pd.read_csv(clades_fn, sep="\t", header=None, skip_blank_lines=True).dropna()
+    subclades_df = pd.read_csv(clades_fn, sep="\t", header=None, names=list(clades_df.columns), skip_blank_lines=True).dropna()
     #clades = list(clades_df['clade'].drop_duplicates())
     #clades.sort()
     #for i,clade in enumerate(clades):
@@ -375,14 +375,14 @@ def parse_vcf(vcf_fn, info_fcts={}, constant_fields={}):
         vcf_data.append(fields)
     return pd.DataFrame(vcf_data, index=pd.Index(index))
 
-def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annotation_fn, clades_df):
+def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annotation_fn, clades_df, subclades_df):
     snv_info = []
     multiindex_rows = [[],[]]
     annotator_fcts = {
         'Pool' : lambda info: info['Pool'],
-        'AminoAcidChange' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
-        'RefCodon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
-        'AltCodon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
+        'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
+        'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
+        'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
         'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
         'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
     }
@@ -417,7 +417,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     vcf_medaka.columns = pd.MultiIndex.from_product([['medaka variant'], vcf_medaka.columns])
     # extract and format vcf-annotator information
     vcf_ann["Product"] = vcf_ann["Product"].str.replace('[space]', ' ', regex=False)
-    vcf_annotation = vcf_ann[['AminoAcidChange', 'RefCodon', 'AltCodon', 'Gene', 'Product']]
+    vcf_annotation = vcf_ann[['AA change', 'Ref codon', 'Alt codon', 'Gene', 'Product']]
     vcf_annotation.columns = pd.MultiIndex.from_product([['vcf-annotator'], vcf_annotation.columns])
     vcf_annotation = vcf_annotation.drop_duplicates()
     # extract information about which SNVs passed and failed the ARTIC vcf_filter
@@ -440,7 +440,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
                                  right_on=common_columns).fillna(True).set_index('index')
     vcf_longshot_bias = vcf_longshot_bias[['qual', 'filter', 'cov', '#ref', '#alt', '#amb', 'strand bias']]
     vcf_longshot_bias.columns = pd.MultiIndex.from_product([['longshot'], vcf_longshot_bias.columns])
-    # if a final consensus sequence is present inthe results directory,
+    # if a final consensus sequence is present in the results directory,
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus):
         alignment = mafft([sample_final_consensus], reference_fn)
@@ -480,14 +480,22 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     snv_info = snv_info.loc[:, columns] #restore column order
     snv_info = snv_info.join(vcf_artic_filter, how='left')
     snv_info = snv_info.join(vcf_annotation, how='left')
-    #if os.path.exists(sample_final_consensus):
-    #    breakpoint()
     snv_info = snv_info.join(vcf_confirmed, how='outer')
     sel_null = pd.isnull(snv_info[('medaka variant', 'site')])
     if np.any(sel_null):
-        snv_info.loc[sel_null, ('medaka variant', 'site')] = int(snv_info.loc[sel_null].index.str.extract(r"\D+(\d+)\D+")[0])
-        snv_info.loc[sel_null, ('medaka variant', 'ref')] = snv_info.loc[sel_null].index.str.extract(r"(\D+)\d+\D+")[0]
-        snv_info.loc[sel_null, ('medaka variant', 'alt')] = snv_info.loc[sel_null].index.str.extract(r"\D+\d+(\D+)")[0]
+        snv_info.loc[sel_null, ('medaka variant', 'site')] = int(snv_info.loc[sel_null].index.str.extract(r"\D+(\d+)\D+")[0][0])
+        snv_info.loc[sel_null, ('medaka variant', 'ref')] = snv_info.loc[sel_null].index.str.extract(r"(\D+)\d+\D+")[0][0]
+        snv_info.loc[sel_null, ('medaka variant', 'alt')] = snv_info.loc[sel_null].index.str.extract(r"\D+\d+(\D+)")[0][0]
+    # add nextstrain clade information
+    clade_info = []
+    for i,row in snv_info.iterrows():
+        clades_ = []
+        clades_.extend(list(clades_df.loc[(clades_df['site'] == row[('medaka variant', 'site')]) & \
+                                          (clades_df['alt'] == row[('medaka variant', 'alt')]),'clade']))
+        clades_.extend(list(subclades_df.loc[(subclades_df['site'] == row[('medaka variant', 'site')]) & \
+                                             (subclades_df['alt'] == row[('medaka variant', 'alt')]),'clade']))
+        clade_info.append(",".join(clades_))
+    snv_info.insert(loc=0, column=('nextstrain', 'clades'), value=clade_info)
     return snv_info.sort_values(('medaka variant', 'site'))
 
 def get_software_versions(sample, artic_runs, results_dir):
@@ -507,4 +515,7 @@ def get_software_versions(sample, artic_runs, results_dir):
                 software_versions[software] = f.readline().strip()
         else:
             software_versions[software] = 'unknown'
-    return software_versions
+    df = pd.Series(software_versions).to_frame()
+    df.index.set_names(['software'], inplace=True)
+    df.rename(columns={0: "version"}, inplace=True)
+    return df

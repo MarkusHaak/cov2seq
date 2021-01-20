@@ -17,8 +17,8 @@ pd.set_option('display.width', 130)
 
 def sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                   cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
-                  amplicons, sample_nanopore_runs, threshold_limit, threshold_low, 
-                  filtered_snvs_only=True):
+                  amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
+                  threshold_limit, threshold_low, software_versions, filtered_snvs_only=True):
     img_dir = os.path.join(sample_results_dir, 'img')
     report_fn = os.path.join(sample_results_dir, "{}.cov2seq-report.html".format(sample))
     summary_plot_fn = os.path.join(img_dir, "{}.report.svg".format(sample))
@@ -31,21 +31,39 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     logger.debug('final: {}'.format(final))
     if not final:
         header += " (preliminary)"
+    snv_info_ = snv_info
     if filtered_snvs_only:
-        snv_info = snv_info.loc[pd.notnull(snv_info[('ARTIC', 'snv_filter')]) |\
-                                pd.notnull(snv_info[('final', 'decision')])]
-    snv_info_ = snv_info.reset_index().reset_index().set_index(['index', 'level_0'])
+        snv_info_ = snv_info.loc[pd.notnull(snv_info[('ARTIC', 'snv_filter')]) |\
+                                 pd.notnull(snv_info[('final', 'decision')])]
+    snv_info_ = snv_info_.reset_index().reset_index().set_index(['index', 'level_0'])
     snv_info_.index.set_names(['variant', ''], inplace=True)
     snv_table = snv_info_.to_html(float_format=lambda f: "{:.1f}".format(f),
-                                  na_rep="", justify="left")
-    nanopore_runs_table = sample_nanopore_runs.reset_index(drop=True).to_html()
+                                  na_rep="", justify="left", classes=['table-hover'])
+    nanopore_runs_table = sample_nanopore_runs.reset_index(drop=True).to_html(classes=['table-hover'])
+    artic_stats_table = sample_artic_stats.to_html(classes=['table-hover'])
+    software_versions_table = software_versions.to_html()
+    if final:
+        masked_regions, masked_bases = get_masked_bases(final_consensus_fn)
+        masked_regions_table = masked_regions.to_html(classes=['table-hover'])
+    else:
+        masked_bases, masked_regions_table = None, None
     render_dict = {"sample" : sample,
+                   "final": final,
                    "header" : header,
                    "snv_table" : snv_table,
                    "summary_plot_fn" : summary_plot_fn,
                    "threshold_limit" : threshold_limit,
                    "threshold_low" : threshold_low,
-                   "nanopore_runs_table" : nanopore_runs_table}
+                   "nanopore_runs_table" : nanopore_runs_table,
+                   "artic_stats_table" : artic_stats_table,
+                   "medaka_variant_SNVs": len(snv_info),
+                   "unique_medaka_variant_SNVs": len(snv_info.index.unique()),
+                   "longshot_SNVs": len(snv_info_.index.droplevel(1).unique()),
+                   "clade_assignment": clade_assignment, 
+                   "parent_clade": parent_clade,
+                   "software_versions_table": software_versions_table,
+                   "masked_bases": masked_bases,
+                   "masked_regions_table": masked_regions_table}
     # create output directory for sample if it does not exist already
     dirs = [sample_results_dir, img_dir]
     for d in dirs:
@@ -102,12 +120,18 @@ def create_sample_reports(args, pkg_dir):
         sample_nanopore_runs = nanopore_runs.loc[sample]
         if type(sample_nanopore_runs) == pd.core.series.Series:
             sample_nanopore_runs = sample_nanopore_runs.to_frame().T
+        sample_artic_stats = artic_runs.loc[sample].to_frame().T
         cov_primertrimmed = get_nanopore_coverage_primertrimmed(sample, artic_runs)
         cov_illumina, mapped_illumina = get_illumina_coverage_and_mappings(sample, args.illumina_dir, reference)
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
-        snv_info = load_snv_info(sample, artic_runs, args.results_dir, args.reference_fn, args.reference_annotation_fn, clades_df)
+        snv_info = load_snv_info(sample, artic_runs, args.results_dir, args.reference_fn, 
+                                 args.reference_annotation_fn, clades_df, subclades_df)
+        _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
+                                                      args.nextstrain_ncov, repeat_assignment=True)
+        software_versions = get_software_versions(sample, artic_runs, args.results_dir)
 
         sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                       cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
-                      amplicons, sample_nanopore_runs, args.threshold_limit, args.threshold_low)
+                      amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
+                      args.threshold_limit, args.threshold_low, software_versions)

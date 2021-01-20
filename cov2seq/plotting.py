@@ -149,7 +149,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
         scov = v[('longshot', 'cov')]
         passed = v[('ARTIC', 'snv_filter')]
         decision = v[('final', 'decision')]
-        clades_ = False
+        clades_ = v[('nextstrain', 'clades')]
 
         #clades_ = v[('nextstrain', 'clades')]
         if np.isnan(scov) and decision != 'confirmed':
