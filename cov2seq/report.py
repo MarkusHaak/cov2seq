@@ -133,7 +133,8 @@ def create_sample_reports(args, pkg_dir):
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
         snv_info, masked_regions = load_snv_info(sample, artic_runs, args.results_dir, 
-                                                 reference_fasta_fn, clades_df, subclades_df)
+                                                 reference_fasta_fn, args.snpeff_dir, clades_df, 
+                                                 subclades_df)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
                                                       args.nextstrain_ncov_dir, repeat_assignment=True)
         software_versions = get_software_versions(sample, artic_runs, args.results_dir)

@@ -17,7 +17,7 @@ conda config --add channels conda-forge bioconda
 Then install the dependencies using conda and pip:
 
 ```
-conda install mafft iqtree augur bedtools samtools
+conda install mafft iqtree augur bedtools samtools longshot
 ```
 
 At the point of writing, setuptools is complaining that Nextstrain augur requires bioconda version 1.76 when running the installation of cov2seq, but version 1.78 is installed by conda. Use pip to fix this issue if you encounter it:

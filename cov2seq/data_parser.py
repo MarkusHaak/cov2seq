@@ -308,7 +308,7 @@ def approximate_sanger_coverage(sample, sanger_dir, reference, amplicons, primer
             coverage_sanger[start:end] += 1
     return coverage_sanger
 
-def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov, repeat_assignment=True):
+def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov_dir, repeat_assignment=True):
     '''performs a clade assignment using nextstrain's assign_clade.py script and returns
     the results as a tuple of three values: 'fasta header', 'clade' and 'parent clade' '''
     consensus_fn = os.path.join(results_dir, sample, '{}.final.fasta'.format(sample))
@@ -321,7 +321,7 @@ def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov, repeat_assign
         version_fn = os.path.join(artic_dir, 'assign_clades.py.version.info')
     # repeat clade assignment by default ?
     if not os.path.exists(clade_fn) or repeat_assignment:
-        cmd =  'cd {} && '.format(nextstrain_ncov) 
+        cmd =  'cd {} && '.format(nextstrain_ncov_dir) 
         cmd += '{} scripts/assign_clades.py --sequences {} --output {} && '.format(sys.executable, consensus_fn, clade_fn)
         cmd += 'git log --pretty="%H" -n 1  > {}'.format(version_fn)
         ret = os.system(cmd)
@@ -341,11 +341,11 @@ def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov, repeat_assign
         logger.warning("Clade assignment file is of unknown format: {}".format(clade_fn))
         return ('', 'unknown', '')
 
-def run_extended_snv_pipeline(sample, artic_runs, reference_fasta_fn):
+def run_extended_snv_pipeline(sample, artic_runs, snpeff_dir, reference_fasta_fn):
     artic_dir = artic_runs.loc[sample, 'artic_dir']
     sorted_bam_fn = os.path.join(artic_dir, '{}.primertrimmed.rg.sorted.bam'.format(sample))
     merged_vcf_fn = os.path.join(artic_dir, '{}.merged.vcf.gz'.format(sample))
-    annotated_vcf_fn = os.path.join(artic_dir, '{}.merged..vcf'.format(sample))
+    annotated_vcf_fn = os.path.join(artic_dir, '{}.merged.snpeff.vcf'.format(sample))
     strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
     for fn in [annotated_vcf_fn, strand_bias_vcf_fn]:
         if os.path.exists(fn):
@@ -354,18 +354,20 @@ def run_extended_snv_pipeline(sample, artic_runs, reference_fasta_fn):
                 return False
     cmds = []
     # re-run longshot variant calling with strand bias filter
+    if not os.path.exists(reference_fasta_fn + '.fai'):
+        cmd = "samtools faidx {}".format(reference_fasta_fn)
+        cmds.append(cmd)
     cmd = 'longshot -P 0.01 -F -A --no_haps --bam {} --ref {} --out {} --potential_variants {}'.format(
         sorted_bam_fn, reference_fasta_fn, strand_bias_vcf_fn, merged_vcf_fn)
     cmds.append(cmd)
     ## run annotation of merged vcf
-    #cmd = 'zcat {0} > {1} ; vcf-annotator {1} {2} --output {1}'.format(
-    #    merged_vcf_fn, annotated_vcf_fn, reference_annotation_fn)
-    #cmds.append(cmd)
+    cmd = 'cd {} ; java -Xmx8g -jar snpEff.jar MN908947.3 {} >{}'.format(
+        snpeff_dir, merged_vcf_fn, annotated_vcf_fn)
+    cmds.append(cmd)
     # chmod
-    for fn in [annotated_vcf_fn, strand_bias_vcf_fn]:
-        if oct(os.stat(fn).st_mode)[-2] not in '732':
-            cmd = "chmod -R g+w {}".format(fn)
-            cmds.append(cmd)
+    for fn in [annotated_vcf_fn, strand_bias_vcf_fn, reference_fasta_fn + '.fai']:
+        cmd = "chmod -R g+w {}".format(fn)
+        cmds.append(cmd)
     for cmd in cmds:
         retval = os.system(cmd)
         if retval != 0:
@@ -442,23 +444,24 @@ def is_masked(row, masked_regions):
             row[('final', 'decision')] = 'partially masked'
     return row
 
-def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, clades_df, subclades_df):
+def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df):
     snv_info = []
     multiindex_rows = [[],[]]
-    annotator_fcts = {
-        'Pool' : lambda info: info['Pool'],
-        'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
-        'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
-        'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
-        'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
-        'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
-    }
-    snpEff_fcts = {"annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
-                   "Gene": lambda info: info['ANN'][0].split("|")[3],
+    #annotator_fcts = {
+    #    'Pool' : lambda info: info['Pool'],
+    #    'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
+    #    'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
+    #    'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
+    #    'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
+    #    'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
+    #}
+    snpEff_fcts = {'Pool' : lambda info: info['Pool'],
+                   "annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
+                   "gene": lambda info: info['ANN'][0].split("|")[3],
                    "distance (nt)": lambda info: '-'+info['ANN'][0].split("|")[14] \
                    if info['ANN'][0].split("|")[1].startswith('upstream') \
                    else info['ANN'][0].split("|")[12].split("/")[0],
-                   "Impact": lambda info: info['ANN'][0].split("|")[2],
+                   "impact": lambda info: info['ANN'][0].split("|")[2],
                    "AA change": lambda info: reformat_AA_change(info['ANN'][0].split("|")[10]),
                    "AA pos": lambda info: info['ANN'][0].split("|")[13]
                    }
@@ -469,7 +472,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, clades_df
         '#amb' : lambda info: info['AM']
     }
     artic_dir = artic_runs.loc[sample, 'artic_dir']
-    annotated_vcf_fn = os.path.join(artic_dir, "{}.merged.ann.vcf".format(sample))
+    annotated_vcf_fn = os.path.join(artic_dir, "{}.merged.snpeff.vcf".format(sample))
     pass_vcf_fn = os.path.join(artic_dir, "{}.pass.vcf.gz".format(sample))
     fail_vcf_fn = os.path.join(artic_dir, "{}.fail.vcf".format(sample))
     longshot_vcf_fn = os.path.join(artic_dir, "{}.longshot.vcf".format(sample))
@@ -477,11 +480,11 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, clades_df
     sample_final_consensus = os.path.join(results_dir, sample, "{}.final.fasta".format(sample))
     # perform snv analysis if vcf files are missing
     if (not os.path.exists(annotated_vcf_fn)) or (not os.path.exists(strand_bias_vcf_fn)):
-        if not run_extended_snv_pipeline(sample, artic_runs, reference_fasta_fn):
+        if not run_extended_snv_pipeline(sample, artic_runs, snpeff_dir, reference_fasta_fn):
             logger.warning('Failed to run extended SNV analysis for sample {}'.format(sample))
     # parse vcf files
-    #vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
-    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=annotator_fcts)
+    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
+    #vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=annotator_fcts)
     vcf_pass = parse_vcf(pass_vcf_fn, constant_fields={'snv_filter': True}, info_fcts=longshot_fcts)
     vcf_fail = parse_vcf(fail_vcf_fn, constant_fields={'snv_filter': False}, info_fcts=longshot_fcts)
     vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)
@@ -493,9 +496,10 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, clades_df
     vcf_medaka = vcf_ann[['Pool', 'site', 'ref', 'alt', 'qual', 'filter']]
     vcf_medaka.columns = pd.MultiIndex.from_product([['medaka variant'], vcf_medaka.columns])
     # extract and format vcf-annotator information
-    vcf_ann["Product"] = vcf_ann["Product"].str.replace('[space]', ' ', regex=False)
-    vcf_annotation = vcf_ann[['AA change', 'Ref codon', 'Alt codon', 'Gene', 'Product']]
-    vcf_annotation.columns = pd.MultiIndex.from_product([['vcf-annotator'], vcf_annotation.columns])
+    #vcf_ann["Product"] = vcf_ann["Product"].str.replace('[space]', ' ', regex=False)
+    #vcf_annotation = vcf_ann[['AA change', 'Ref codon', 'Alt codon', 'Gene', 'Product']]
+    vcf_annotation = vcf_ann[['annotation', 'gene', 'distance (nt)', 'impact', 'AA change', 'AA pos']]
+    vcf_annotation.columns = pd.MultiIndex.from_product([['snpEff'], vcf_annotation.columns])
     vcf_annotation = vcf_annotation.drop_duplicates()
     # extract information about which SNVs passed and failed the ARTIC vcf_filter
     vcf_artic_filter = pd.concat([vcf_pass,vcf_fail])['snv_filter'].to_frame()
