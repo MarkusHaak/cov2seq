@@ -49,7 +49,7 @@ def export_vcf(sample, snv_info, sample_results_dir, reference):
 def sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                   cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
                   amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
-                  masked_regions, threshold_limit, threshold_low, software_versions, 
+                  masked_regions, gap_start, gap_end, threshold_limit, threshold_low, software_versions, 
                   filtered_snvs_only=True):
     img_dir = os.path.join(sample_results_dir, 'img')
     report_fn = os.path.join(sample_results_dir, "{}.report.html".format(sample))
@@ -118,7 +118,9 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
                    "software_versions_table": software_versions_table,
                    "masked_bases": masked_bases,
                    "masked_regions_table": masked_regions_table,
-                   "consensus_length": consensus_length}
+                   "consensus_length": consensus_length,
+                   "align_start": gap_start,
+                   "align_end": len(reference.seq) - gap_end}
     # create output directory for sample if it does not exist already
     dirs = [sample_results_dir, img_dir]
     for d in dirs:
@@ -191,9 +193,9 @@ def create_sample_reports(args, pkg_dir):
         cov_illumina, mapped_illumina = get_illumina_coverage_and_mappings(sample, args.illumina_dir, reference)
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
-        snv_info, masked_regions = load_snv_info(sample, artic_runs, args.results_dir, 
-                                                 reference_fasta_fn, args.snpeff_dir, clades_df, 
-                                                 subclades_df)
+        snv_info, masked_regions, gap_start, gap_end = load_snv_info(
+            sample, artic_runs, args.results_dir, reference_fasta_fn, args.snpeff_dir, clades_df, 
+            subclades_df)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
                                                       args.nextstrain_ncov_dir, repeat_assignment=True)
         software_versions = get_software_versions(sample, artic_runs, args.results_dir)
@@ -201,7 +203,8 @@ def create_sample_reports(args, pkg_dir):
         sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                       cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
                       amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
-                      masked_regions, args.threshold_limit, args.threshold_low, software_versions)
+                      masked_regions, gap_start, gap_end, args.threshold_limit, args.threshold_low, 
+                      software_versions)
 
         if args.export_vcf and os.path.exists(final_consensus_fn):
             export_vcf(sample, snv_info, sample_results_dir, reference)

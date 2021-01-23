@@ -78,15 +78,20 @@ def parse_alignment(alignment, samples=None):
                 else:
                     sites[s, i] = 0
     # do not count missing terminal sequences as gaps
+    gap_start = {sample:0 for sample in samples}
+    gap_end = {sample:0 for sample in samples}
     for s in range(1, n_aligned):
         for i in range(alignment_length):
             if alignment[s, i] == '-':
                 match[s, i] = 1
+                gap_start[samples[s-1]] += int(alignment[0, i] != '-')
             else:
                 break
         for i in range(alignment_length):
-            if alignment[s, alignment_length - i - 1] == '-':
-                match[s, alignment_length - i - 1] = 1
+            j = alignment_length - i - 1
+            if alignment[s, j] == '-':
+                match[s, j] = 1
+                gap_end[samples[s-1]] += int(alignment[0, j] != '-')
             else:
                 break
 
@@ -129,7 +134,7 @@ def parse_alignment(alignment, samples=None):
     masked_df = pd.DataFrame(masked_regions, 
                              columns=['reference start', 'reference end', 'consensus start', 'consensus end', 'bases'], 
                              index=pd.MultiIndex.from_arrays(multiindex_rows, names=("sample", "site")))
-    return var_df, masked_df
+    return var_df, masked_df, gap_start, gap_end
 
 def get_low_coverage_regions(cov, threshold):
     below = (cov < threshold).astype(np.int16)

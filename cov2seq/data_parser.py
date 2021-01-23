@@ -449,14 +449,6 @@ def is_masked(row, masked_regions):
 def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df):
     snv_info = []
     multiindex_rows = [[],[]]
-    #annotator_fcts = {
-    #    'Pool' : lambda info: info['Pool'],
-    #    'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
-    #    'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
-    #    'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
-    #    'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
-    #    'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
-    #}
     snpEff_fcts = {'Pool' : lambda info: info['Pool'],
                    "annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
                    "gene": lambda info: info['ANN'][0].split("|")[3],
@@ -486,7 +478,6 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
             logger.warning('Failed to run extended SNV analysis for sample {}'.format(sample))
     # parse vcf files
     vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
-    #vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=annotator_fcts)
     vcf_pass = parse_vcf(pass_vcf_fn, constant_fields={'snv_filter': True}, info_fcts=longshot_fcts)
     vcf_fail = parse_vcf(fail_vcf_fn, constant_fields={'snv_filter': False}, info_fcts=longshot_fcts)
     vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)
@@ -498,8 +489,6 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     vcf_medaka = vcf_ann[['Pool', 'site', 'ref', 'alt', 'qual', 'filter']]
     vcf_medaka.columns = pd.MultiIndex.from_product([['medaka variant'], vcf_medaka.columns])
     # extract and format vcf-annotator information
-    #vcf_ann["Product"] = vcf_ann["Product"].str.replace('[space]', ' ', regex=False)
-    #vcf_annotation = vcf_ann[['AA change', 'Ref codon', 'Alt codon', 'Gene', 'Product']]
     vcf_annotation = vcf_ann[['annotation', 'gene', 'distance (nt)', 'impact', 'AA change', 'AA pos']]
     vcf_annotation.columns = pd.MultiIndex.from_product([['snpEff'], vcf_annotation.columns])
     vcf_annotation = vcf_annotation.drop_duplicates()
@@ -527,9 +516,10 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus):
         alignment = mafft([sample_final_consensus], reference_fasta_fn)
-        vcf_confirmed, masked_regions = parse_alignment(alignment, [sample])
+        vcf_confirmed, masked_regions, gap_start, gap_end = parse_alignment(alignment, [sample])
         vcf_confirmed = vcf_confirmed.loc[sample]
         masked_regions = masked_regions.loc[sample]
+        gap_start, gap_end = gap_start[sample], gap_end[sample]
         #vcf_confirmed['decision'] = True
         vcf_confirmed = vcf_confirmed['decision'].to_frame()
         vcf_confirmed.columns = pd.MultiIndex.from_product([['final'], vcf_confirmed.columns])
@@ -590,7 +580,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
                                              (subclades_df['alt'] == row[('medaka variant', 'alt')]),'clade']))
         clade_info.append(", ".join(clades_))
     snv_info.insert(loc=0, column=('nextstrain', 'clades'), value=clade_info)
-    return snv_info.sort_values(('medaka variant', 'site')), masked_regions
+    return snv_info.sort_values(('medaka variant', 'site')), masked_regions, gap_start, gap_end
 
 def get_software_versions(sample, artic_runs, results_dir):
     artic_dir = artic_runs.loc[sample, 'artic_dir']
