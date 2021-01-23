@@ -25,7 +25,6 @@ def binaries_directory():
     print('no installation path found', file=sys.stderr)
     return None
 
-
 def submodule_data_files(submodule):
     data_files = []
     for dirpath, dirnames, filenames in os.walk(submodule):
@@ -51,15 +50,13 @@ if not __version__:
     print("ERROR: unable to read version string from file {}".format(VERSIONFILE))
     exit()
 
-DESCR = '''Comprehensive reports for Nanopore/Illumina/Sanger sequencing experiments of SARS CoV2 samples'''
+DESCR = '''Automation and QC tool for Nanopore sequencing experiments of SARS-CoV2.'''
 
 # load long description from Markdown file
 with open('README.md', 'rb') as readme:
     LONG_DESCR = readme.read().decode()
 
 data_files = [('cov2seq', ['cfg/cov2seq.cfg'])]
-data_files.extend(submodule_data_files('.git'))
-data_files.extend(submodule_data_files('ncov'))
 
 for d, files in data_files:
     print(d, files)

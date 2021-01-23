@@ -92,43 +92,36 @@ def add_main_group_to_parser(parser):
     main_group.add_argument('--sanger_dir',
         help='''base directory containing sample-named sub-directories of sanger data. 
              The directory tree must be <sanger_dir>/<sample_name>/*-<primer_id>.ab1''')
-    main_group.add_argument('--reference_fn',
-        help='Fasta file containing the reference sequence used in the artic pipeline.')
-    main_group.add_argument('--reference_annotation_fn',
-        help='.json file with basic gene annotation information.')
     main_group.add_argument('--primer_schemes_dir',
         help='''Direcotry containing the primer scheme files in a directory tree as follows:
              <primer_schemes_dir>/<scheme_name>/<scheme_version>/<scheme_name>.*''')
     main_group.add_argument('--results_dir',
         help='''Directory for saving sample results.''')
-    main_group.add_argument('--nextstrain_ncov',
+    main_group.add_argument('--nextstrain_ncov_dir',
         help='''Path to the directory containing the Nextstrain ncov git repository. This should
-             be updated regularly for latest clade assignments.''')
+             be updated regularly to get the latest nextstrain clade information.''')
+    main_group.add_argument('--snpeff_dir',
+        help='''Path to the directory containing the snpEff binaries and the snpEff data directory.''')
     return parser
 
 def check_arguments(args):
     args.nanopore_dir = os.path.expanduser(args.nanopore_dir)
     args.primer_schemes_dir = os.path.expanduser(args.primer_schemes_dir)
     args.results_dir = os.path.expanduser(args.results_dir)
-    args.nextstrain_ncov = os.path.expanduser(args.nextstrain_ncov)
-    args.reference_fn = os.path.expanduser(args.reference_fn)
-    args.reference_annotation_fn = os.path.expanduser(args.reference_annotation_fn)
+    args.nextstrain_ncov_dir = os.path.expanduser(args.nextstrain_ncov_dir)
+    args.snpeff_dir = os.path.expanduser(args.snpeff_dir)
     args.illumina_dir = os.path.expanduser(args.illumina_dir)
     args.sanger_dir = os.path.expanduser(args.sanger_dir)
     for arg in [args.nanopore_dir,
                 args.primer_schemes_dir,
                 args.results_dir,
-                args.nextstrain_ncov]:
+                args.nextstrain_ncov_dir,
+                args.snpeff_dir]:
         if not os.path.isdir(arg):
             logger.error('Directory {} does not exist but is required.'.format(arg))
             exit(1)
         if not os.access(arg, os.W_OK):
             logger.error('Write permissions required for directory {}'.format(arg))
-            exit(1)
-    for arg in [args.reference_fn,
-                args.reference_annotation_fn]:
-        if not os.path.isfile(arg):
-            logger.error('File {} does not exist but is required.'.format(arg))
             exit(1)
     for arg in [args.illumina_dir,
                 args.sanger_dir]:
@@ -155,10 +148,6 @@ def add_help_group_to_parser(parser):
 
 def init_parser(argv, defaults, script_descr="", fields=[]):
     pkg_dir, pkg_version, pkg_descr = get_package_info()
-    
-    nextstrain_ncov = os.path.join(pkg_dir, 'ncov')
-    if os.path.exists(nextstrain_ncov):
-        defaults.update({'nextstrain_ncov' : nextstrain_ncov})
 
     conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults, fields)
 

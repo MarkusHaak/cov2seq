@@ -29,14 +29,20 @@ def subdir_paths(basedir, level=2):
     basedir = basedir.rstrip(os.path.sep)
     return [d[len(basedir)+1:] for d in glob(os.path.join(*([basedir] + ['*'] * level))) if os.path.isdir(d)]
 
-def load_reference(reference_fn, reference_annotation_fn):
+def load_reference(reference_fn):
     logger.info('Loading reference.')
-    for record in SeqIO.parse(reference_fn, "fasta"):
-        reference = record
-        break
-    with open(reference_annotation_fn, "r") as f:
-        data = json.load(f)
-    reference_genes = data['genes']
+    reference = next(SeqIO.parse(reference_fn, "gb"))
+    data = []
+    for feature in reference.features:
+        if feature.type=="CDS":
+            data.append({"gene" : feature.qualifiers['gene'][0] if 'gene' in feature.qualifiers else "",
+                         "strand" : feature.strand,
+                         "start" : feature.location.start.position,
+                         "end" : feature.location.end.position,
+                         "protein_id" : feature.qualifiers['protein_id'][0] if 'protein_id' in feature.qualifiers else "",
+                         "product" : feature.qualifiers['product'][0] if 'product' in feature.qualifiers else "",
+                         "note" : feature.qualifiers['note'][0] if 'note' in feature.qualifiers else ""})
+    reference_genes = pd.DataFrame(data)
     return reference, reference_genes
 
 def get_nanopore_runs(artic_dir):
@@ -163,10 +169,10 @@ def load_primer_schemes(primer_schemes_dir, primer_schemes):
                                          index=amplicon_names)
     return primers, amplicons
 
-def load_clades_info(nextstrain_ncov):
+def load_clades_info(nextstrain_ncov_dir):
     logger.info('Loading nextstrain clades information.')
-    clades_fn = os.path.join(nextstrain_ncov, "defaults", "clades.tsv")
-    subclades_fn = os.path.join(nextstrain_ncov, "defaults", "subclades.tsv")
+    clades_fn = os.path.join(nextstrain_ncov_dir, "defaults", "clades.tsv")
+    subclades_fn = os.path.join(nextstrain_ncov_dir, "defaults", "subclades.tsv")
     clades_df = pd.read_csv(clades_fn, sep="\t", header=0, skip_blank_lines=True).dropna()
     subclades_df = pd.read_csv(clades_fn, sep="\t", header=None, names=list(clades_df.columns), skip_blank_lines=True).dropna()
     #clades = list(clades_df['clade'].drop_duplicates())
@@ -335,11 +341,11 @@ def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov, repeat_assign
         logger.warning("Clade assignment file is of unknown format: {}".format(clade_fn))
         return ('', 'unknown', '')
 
-def run_extended_snv_pipeline(sample, artic_runs, reference_fn, reference_annotation_fn):
+def run_extended_snv_pipeline(sample, artic_runs, reference_fasta_fn):
     artic_dir = artic_runs.loc[sample, 'artic_dir']
     sorted_bam_fn = os.path.join(artic_dir, '{}.primertrimmed.rg.sorted.bam'.format(sample))
     merged_vcf_fn = os.path.join(artic_dir, '{}.merged.vcf.gz'.format(sample))
-    annotated_vcf_fn = os.path.join(artic_dir, '{}.merged.ann.vcf'.format(sample))
+    annotated_vcf_fn = os.path.join(artic_dir, '{}.merged..vcf'.format(sample))
     strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
     for fn in [annotated_vcf_fn, strand_bias_vcf_fn]:
         if os.path.exists(fn):
@@ -349,12 +355,12 @@ def run_extended_snv_pipeline(sample, artic_runs, reference_fn, reference_annota
     cmds = []
     # re-run longshot variant calling with strand bias filter
     cmd = 'longshot -P 0.01 -F -A --no_haps --bam {} --ref {} --out {} --potential_variants {}'.format(
-        sorted_bam_fn, reference_fn, strand_bias_vcf_fn, merged_vcf_fn)
+        sorted_bam_fn, reference_fasta_fn, strand_bias_vcf_fn, merged_vcf_fn)
     cmds.append(cmd)
-    # run annotation of merged vcf
-    cmd = 'zcat {0} > {1} ; vcf-annotator {1} {2} --output {1}'.format(
-        merged_vcf_fn, annotated_vcf_fn, reference_annotation_fn)
-    cmds.append(cmd)
+    ## run annotation of merged vcf
+    #cmd = 'zcat {0} > {1} ; vcf-annotator {1} {2} --output {1}'.format(
+    #    merged_vcf_fn, annotated_vcf_fn, reference_annotation_fn)
+    #cmds.append(cmd)
     # chmod
     for fn in [annotated_vcf_fn, strand_bias_vcf_fn]:
         if oct(os.stat(fn).st_mode)[-2] not in '732':
@@ -392,8 +398,8 @@ def reformat_AA_change(s):
     # conservative inframe insertion
     m = re.fullmatch(f'p.([{aa}])(\d+)_([{aa}])(\d+)ins([{aa}]+)', s)
     if m:
-        #return f"{m.group(1)}{m.group(2)}_{m.group(4)}_{m.group(3)}"
-        return f"{m.group(3)}{m.group(4)}{m.group(5)}{m.group(3)}"
+        return f"{m.group(1)}{m.group(2)}{m.group(1)}_{m.group(5)}"
+        #return f"{m.group(3)}{m.group(4)}{m.group(5)}{m.group(3)}"
     # disruptive inframe insertion, p.D614delinsEL
     m = re.fullmatch(f'p.([{aa}])(\d+)delins([{aa}]+)', s)
     if m:
@@ -436,17 +442,17 @@ def is_masked(row, masked_regions):
             row[('final', 'decision')] = 'partially masked'
     return row
 
-def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annotation_fn, clades_df, subclades_df):
+def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, clades_df, subclades_df):
     snv_info = []
     multiindex_rows = [[],[]]
-    #annotator_fcts = {
-    #    'Pool' : lambda info: info['Pool'],
-    #    'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
-    #    'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
-    #    'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
-    #    'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
-    #    'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
-    #}
+    annotator_fcts = {
+        'Pool' : lambda info: info['Pool'],
+        'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
+        'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
+        'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
+        'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
+        'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
+    }
     snpEff_fcts = {"annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
                    "Gene": lambda info: info['ANN'][0].split("|")[3],
                    "distance (nt)": lambda info: '-'+info['ANN'][0].split("|")[14] \
@@ -471,11 +477,11 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     sample_final_consensus = os.path.join(results_dir, sample, "{}.final.fasta".format(sample))
     # perform snv analysis if vcf files are missing
     if (not os.path.exists(annotated_vcf_fn)) or (not os.path.exists(strand_bias_vcf_fn)):
-        if not run_extended_snv_pipeline(sample, artic_runs, reference_fn, reference_annotation_fn):
+        if not run_extended_snv_pipeline(sample, artic_runs, reference_fasta_fn):
             logger.warning('Failed to run extended SNV analysis for sample {}'.format(sample))
     # parse vcf files
-    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
-    vcf_ann = parse_vcf(fn, info_fcts=)
+    #vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
+    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=annotator_fcts)
     vcf_pass = parse_vcf(pass_vcf_fn, constant_fields={'snv_filter': True}, info_fcts=longshot_fcts)
     vcf_fail = parse_vcf(fail_vcf_fn, constant_fields={'snv_filter': False}, info_fcts=longshot_fcts)
     vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)
@@ -514,7 +520,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     # if a final consensus sequence is present in the results directory,
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus):
-        alignment = mafft([sample_final_consensus], reference_fn)
+        alignment = mafft([sample_final_consensus], reference_fasta_fn)
         vcf_confirmed, masked_regions = parse_alignment(alignment, [sample])
         vcf_confirmed = vcf_confirmed.loc[sample]
         masked_regions = masked_regions.loc[sample]

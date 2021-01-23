@@ -126,16 +126,14 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
     
     # plot genes
     ax3.set_yticks([])
-    i = 0
-    for gene,d in reference_genes.items():
-        r  = mpatch.Rectangle((d['start'],0), 
-                              d['end']-d['start'], 1, 
-                              facecolor="C{}".format(3 + i%2),
-                              edgecolor=None)
-        ax3.annotate(gene, (d['start']+(d['end']-d['start'])/2, 0.5), color='w', weight='bold', 
-                fontsize=10, ha='center', va='center')
+    for i,(gene, strand, start, end, protein_id, product, note) in reference_genes.iterrows():
+        r  = mpatch.Rectangle((start,0), 
+                               end-start, 1, 
+                               facecolor="C{}".format(3 + i%2),
+                               edgecolor=None)
+        ax3.annotate(gene, (start+(end-start)/2, 0.5), color='w', weight='bold', 
+                     fontsize=10, ha='center', va='center')
         ax3.add_patch(r)
-        i += 1
     ax3.set_ylim((0,1))
     # show SNVs
     i = snv_annotation_offset

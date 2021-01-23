@@ -99,8 +99,10 @@ def create_sample_reports(args, pkg_dir):
     selected_samples = selected_samples_from_patterns(args.nanopore_dir, args.samples)
     logger.info("Creating reports for the following {} samples:\n{}".format(
         len(selected_samples), ", ".join(selected_samples)))
-    reference, reference_genes = load_reference(args.reference_fn, args.reference_annotation_fn)
-    clades_df, subclades_df = load_clades_info(args.nextstrain_ncov)
+    reference_fn = os.path.join(args.nextstrain_ncov_dir, "defaults", "reference_seq.gb")
+    reference_fasta_fn = os.path.join(args.nextstrain_ncov_dir, "defaults", "reference_seq.fasta")
+    reference, reference_genes = load_reference(reference_fn)
+    clades_df, subclades_df = load_clades_info(args.nextstrain_ncov_dir)
     artic_runs, nanopore_runs = load_nanopore_info(selected_samples, args.nanopore_dir)
     primer_schemes = list(nanopore_runs.scheme.drop_duplicates())
     primers, amplicons = load_primer_schemes(args.primer_schemes_dir, primer_schemes)
@@ -130,10 +132,10 @@ def create_sample_reports(args, pkg_dir):
         cov_illumina, mapped_illumina = get_illumina_coverage_and_mappings(sample, args.illumina_dir, reference)
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
-        snv_info, masked_regions = load_snv_info(sample, artic_runs, args.results_dir, args.reference_fn, 
-                                                 args.reference_annotation_fn, clades_df, subclades_df)
+        snv_info, masked_regions = load_snv_info(sample, artic_runs, args.results_dir, 
+                                                 reference_fasta_fn, clades_df, subclades_df)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
-                                                      args.nextstrain_ncov, repeat_assignment=True)
+                                                      args.nextstrain_ncov_dir, repeat_assignment=True)
         software_versions = get_software_versions(sample, artic_runs, args.results_dir)
 
         sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
