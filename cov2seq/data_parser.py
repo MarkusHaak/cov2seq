@@ -466,10 +466,10 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
                    "AA pos": lambda info: info['ANN'][0].split("|")[13]
                    }
     longshot_fcts = {
-        'cov' : lambda info: info['AC'][0] + info['AC'][1] + info['AM'],
-        '#ref' : lambda info: info['AC'][0],
-        '#alt' : lambda info: info['AC'][1],
-        '#amb' : lambda info: info['AM']
+        'cov' : lambda info: int(info['AC'][0] + info['AC'][1] + info['AM']),
+        '#ref' : lambda info: int(info['AC'][0]),
+        '#alt' : lambda info: int(info['AC'][1]),
+        '#amb' : lambda info: int(info['AM'])
     }
     artic_dir = artic_runs.loc[sample, 'artic_dir']
     annotated_vcf_fn = os.path.join(artic_dir, "{}.merged.snpeff.vcf".format(sample))

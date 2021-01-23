@@ -89,7 +89,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
             halign = 'right'
         else:
             halign = 'center'
-        ax1.axvspan(start, end, facecolor='red', alpha=0.2, linewidth=None)
+        ax1.axvspan(start, end, facecolor='red', alpha=0.4, linewidth=None)
         ax1.text(np.mean([start, end]), ax1_ylim[1]*0.99, "{}".format(width), 
                  horizontalalignment=halign, verticalalignment="top")
     # plot amplicons
@@ -103,7 +103,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
                 pool_loc[pool] = len(pool_loc)
             rl = mpatch.Rectangle((amplicon['pstart'],pool_loc[pool]), 
                                   amplicon['start']-amplicon['pstart'], 1, 
-                                  facecolor="grey",
+                                  facecolor="gray",
                                   edgecolor=None)
             r  = mpatch.Rectangle((amplicon['start'],pool_loc[pool]), 
                                   amplicon['end']-amplicon['start'], 1, 
@@ -112,7 +112,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
                                   edgecolor=None)
             rr = mpatch.Rectangle((amplicon['end'],pool_loc[pool]), 
                                   amplicon['pend']-amplicon['end'], 1, 
-                                  facecolor="grey",
+                                  facecolor="gray",
                                   edgecolor=None)
             ax2.annotate(amplicon['name'].split("_")[-1], 
                          (amplicon['start']+(amplicon['end']-amplicon['start'])/2, pool_loc[pool]+0.5), 
@@ -157,12 +157,22 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
         color = "green" if passed == True else "red"
         ax4.plot([site, site], [snv_annotation_layers+1,height+1], color=color, linewidth=1.)
         txtcolor = "black"
-        if decision == True:
-            txtcolor = 'green'
-        elif clades_:
+        if final:
+            if decision == 'confirmed':
+                txtcolor = 'green'
+            elif decision == 'introduced':
+                txtcolor = 'magenta'
+            elif decision == 'masked':
+                txtcolor = 'gray'
+            elif decision == 'partially masked':
+                txtcolor = 'yellow'
+            else:
+                txtcolor = 'red'
+        if clades_:
             #txtcolor = clades_df.loc[(clades_df['site'] == site) & (clades_df['alt'] == alt),
             #                         'color'].to_list()[0]
-            txtcolor = "blue"
+            #txtcolor = "blue"
+            index += "$^{c}$"
         ax4.text(site, height, index, 
                  horizontalalignment='left', verticalalignment="bottom", color=txtcolor)
         i += 1

@@ -198,6 +198,12 @@ def report(argv=None):
                 data alone works sufficiently well. Regions with a coverage below this 
                 this threshold are highlighted orange.''',
         type=int)
+    report_group.add_argument('--export_vcf',
+        help='''Export a new vcf file named <sample>.final.vcf to the sample's results directory that
+                contains all confirmed or introduced SNVs that were detected in the final consensus sequence.
+                N-Masked variants are not written to the vcf file. No vcf file is exported for samples 
+                missing a final consensus sequence.''',
+        action='store_true')
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)

@@ -42,9 +42,10 @@ Then change into the root of the directory tree and clone the nextstrain ncov gi
 ```
 cd ~/cov2seq
 git clone https://github.com/nextstrain/ncov.git
+sed -i 's/>MN908947/>MN908947.3/' ncov/defaults/reference_seq.fasta
 ```
 
-Keep this repository up to date by running ```git pull``` on a regular basis to receive the latest nextstrain clade information.
+Keep this repository up to date by running `git pull` on a regular basis to receive the latest nextstrain clade information. The reference sequence information under ncov/defaults/reference_seq.* are used in the pipeline. Possibly, the fasta header in ncov/defaults/reference_seq.fasta needs to be changed from `>MN908947` to `>MN908947.3`, since the latter is used as the reference id in the ARTIC pipeline.
 
 Cov2seq also needs the information about primer schemes used in the artic pipeline. Either skip the following step and change the corresponding path in the config file to the location of your primer_schemes directory, or clone the artic-ncov2019 repository to the cov2seq root directory:
 
@@ -52,7 +53,7 @@ Cov2seq also needs the information about primer schemes used in the artic pipeli
 git clone https://github.com/artic-network/artic-ncov2019.git
 ```
 
-Additionaly, the SnpEff binaries are required to annotate vcf files. Download and unzip the binaries and create a MN908947.3 reference:
+Additionally, the SnpEff binaries are required to annotate vcf files. Download and unzip the binaries and create a MN908947.3 reference:
 
 ```
 wget https://snpeff.blob.core.windows.net/versions/snpEff_latest_core.zip
