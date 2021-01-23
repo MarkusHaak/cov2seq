@@ -4,13 +4,15 @@ import re
 from glob import glob
 import numpy as np
 import pandas as pd
+from Bio import SeqIO
 from jinja2 import Environment, PackageLoader, select_autoescape
-from .verify import dataset_completion_test, get_masked_bases, get_low_coverage_regions
+from .verify import dataset_completion_test, get_low_coverage_regions
 from .data_parser import *
 from .plotting import create_summary_plot
 
 import logging
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 pd.set_option("display.max_rows", None, "display.max_columns", None)
 pd.set_option('display.width', 130)
@@ -18,7 +20,8 @@ pd.set_option('display.width', 130)
 def sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                   cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
                   amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
-                  threshold_limit, threshold_low, software_versions, filtered_snvs_only=True):
+                  masked_regions, threshold_limit, threshold_low, software_versions, 
+                  filtered_snvs_only=True):
     img_dir = os.path.join(sample_results_dir, 'img')
     report_fn = os.path.join(sample_results_dir, "{}.cov2seq-report.html".format(sample))
     summary_plot_fn = os.path.join(img_dir, "{}.report.svg".format(sample))
@@ -43,10 +46,11 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     artic_stats_table = sample_artic_stats.to_html(classes=['table-hover'])
     software_versions_table = software_versions.to_html()
     if final:
-        masked_regions, masked_bases = get_masked_bases(final_consensus_fn)
         masked_regions_table = masked_regions.to_html(classes=['table-hover'])
+        masked_bases = np.sum(masked_regions['bases'])
+        consensus_length = len(next(SeqIO.parse(final_consensus_fn, "fasta")).seq)
     else:
-        masked_bases, masked_regions_table = None, None
+        masked_bases, masked_regions_table, consensus_length = None, None, None
     render_dict = {"sample" : sample,
                    "final": final,
                    "header" : header,
@@ -63,7 +67,8 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
                    "parent_clade": parent_clade,
                    "software_versions_table": software_versions_table,
                    "masked_bases": masked_bases,
-                   "masked_regions_table": masked_regions_table}
+                   "masked_regions_table": masked_regions_table,
+                   "consensus_length": consensus_length}
     # create output directory for sample if it does not exist already
     dirs = [sample_results_dir, img_dir]
     for d in dirs:
@@ -125,8 +130,8 @@ def create_sample_reports(args, pkg_dir):
         cov_illumina, mapped_illumina = get_illumina_coverage_and_mappings(sample, args.illumina_dir, reference)
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
-        snv_info = load_snv_info(sample, artic_runs, args.results_dir, args.reference_fn, 
-                                 args.reference_annotation_fn, clades_df, subclades_df)
+        snv_info, masked_regions = load_snv_info(sample, artic_runs, args.results_dir, args.reference_fn, 
+                                                 args.reference_annotation_fn, clades_df, subclades_df)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
                                                       args.nextstrain_ncov, repeat_assignment=True)
         software_versions = get_software_versions(sample, artic_runs, args.results_dir)
@@ -134,4 +139,4 @@ def create_sample_reports(args, pkg_dir):
         sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                       cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
                       amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
-                      args.threshold_limit, args.threshold_low, software_versions)
+                      masked_regions, args.threshold_limit, args.threshold_low, software_versions)

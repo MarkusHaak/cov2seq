@@ -9,6 +9,7 @@ import matplotlib.patches as mpatch
 
 import logging
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 font = {'size'   : 12}
 matplotlib.rc('font', **font)

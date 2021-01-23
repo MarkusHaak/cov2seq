@@ -22,7 +22,7 @@
       }
       table {
         border-collapse: collapse;
-        font-size: 1.2em;
+        table-layout: fixed;
         margin-left: 2em;
         margin-bottom: 2em;
         padding-bottom: 2em;
@@ -30,11 +30,12 @@
       }
       td, th {
         border: 1px solid #999;
-        padding: 0.2rem;
+        padding: 0.1rem;
       }
       td {
-        text-align: right;
         font-family: "Lucida Console", "Courier New", monospace;
+        text-align: right;
+        word-wrap: break-word;
       }
       th {
         text-align: left;
@@ -95,7 +96,7 @@
     {% if final %}
     <h2>N-masked regions</h2>
 
-    <p>In total, <b>{{ masked_bases }}</b> bases in the final consensus sequence are masked (N in consensus sequence). The table beneath lists all masked regions.</p>
+    <p>The final consensus sequence is <b>{{ consensus_length }}</b> bases long. In total, <b>{{ masked_bases }}</b> bases in the sequence are masked (N in consensus sequence). The following table lists all masked regions.</p>
 
     {{ masked_regions_table }}
     {% endif %}

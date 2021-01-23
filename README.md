@@ -1,2 +1,2 @@
 # cov2seq
-Comprehensive reports for Nanopore/Illumina/Sanger sequencing experiments of SARS CoV2 samples
+Automation and QC tool for Nanopore sequencing experiments of SARS-CoV2 samples.

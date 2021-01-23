@@ -8,10 +8,22 @@ import pandas as pd
 import re
 import subprocess
 import vcf
-from .verify import mafft, variants_from_alignment
+from .verify import mafft, parse_alignment
 
 import logging
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+aa_single_letter_ = {"Gly":"G", "Pro":"P",
+                     "Ala":"A", "Val":"V",
+                     "Leu":"L", "Ile":"I",
+                     "Met":"M", "Cys":"C",
+                     "Phe":"F", "Tyr":"Y",
+                     "Trp":"W", "His":"H",
+                     "Lys":"K", "Arg":"R",
+                     "Gln":"Q", "Asn":"N",
+                     "Glu":"E", "Asp":"D",
+                     "Ser":"S", "Thr":"T"}
 
 def subdir_paths(basedir, level=2):
     basedir = basedir.rstrip(os.path.sep)
@@ -355,6 +367,43 @@ def run_extended_snv_pipeline(sample, artic_runs, reference_fn, reference_annota
             exit(1)
     return True
 
+def reformat_AA_change(s):
+    # convert from three letter to single letter
+    aa = "".join(aa_single_letter_.values()) + '*'
+    for code, letter in aa_single_letter_.items():
+        s = s.replace(code, letter)
+    # convert AA changes
+    m = re.fullmatch(f'p.([{aa}]+)(\d+)([{aa}]+)', s)
+    if m:
+        ref_aa, pos, alt_aa = m.group(1), int(m.group(2)), m.group(3)
+        return ", ".join([f"{l}{pos+i}{r}" for i,(l,r) in enumerate(zip(ref_aa, alt_aa)) if l!=r])
+    # convert deletions
+    m = re.fullmatch(f'p.([{aa}]\d+_)?([{aa}]\d+)del', s)
+    if m:
+        if m.group(1) is not None:
+            from_aa, to_aa = m.group(1)[:-1], m.group(2)
+            if int(re.fullmatch(f"([{aa}])(\d+)", to_aa).group(2)) - int(re.fullmatch(f"([{aa}])(\d+)", from_aa).group(2)) > 1:
+                return f"{from_aa}∆ - {to_aa}∆"
+            else:
+                return f"{from_aa}∆, {to_aa}∆"
+        else:
+            to_aa = m.group(2)
+            return f"{to_aa}∆"
+    # conservative inframe insertion
+    m = re.fullmatch(f'p.([{aa}])(\d+)_([{aa}])(\d+)ins([{aa}]+)', s)
+    if m:
+        #return f"{m.group(1)}{m.group(2)}_{m.group(4)}_{m.group(3)}"
+        return f"{m.group(3)}{m.group(4)}{m.group(5)}{m.group(3)}"
+    # disruptive inframe insertion, p.D614delinsEL
+    m = re.fullmatch(f'p.([{aa}])(\d+)delins([{aa}]+)', s)
+    if m:
+        return f"{m.group(1)}{m.group(2)}{m.group(3)}"
+    # frame shift, p.P4715fs
+    m = re.fullmatch(f'p.([{aa}])(\d+)fs', s)
+    if m:
+        return f"{m.group(1)}{m.group(2)}fs"
+    return s
+
 def parse_vcf(vcf_fn, info_fcts={}, constant_fields={}):
     vcf_reader = vcf.Reader(filename=vcf_fn)
     vcf_data = []
@@ -375,17 +424,38 @@ def parse_vcf(vcf_fn, info_fcts={}, constant_fields={}):
         vcf_data.append(fields)
     return pd.DataFrame(vcf_data, index=pd.Index(index))
 
+def is_masked(row, masked_regions):
+    if pd.isnull(row[('final', 'decision')]):
+        var_start = row[('medaka variant', 'site')]
+        var_end = var_start + len(row[('medaka variant', 'ref')]) - 1
+        if any((masked_regions['reference start'] <= var_start) & (masked_regions['reference end'] >= var_end)):
+            row[('final', 'decision')] = 'masked'
+        elif any((masked_regions['reference start'] <= var_start) & (masked_regions['reference end'] > var_start)) or \
+             any((masked_regions['reference start'] < var_end) & (masked_regions['reference end'] >= var_end)) or \
+             any((masked_regions['reference start'] > var_start) & (masked_regions['reference end'] <= var_end)):
+            row[('final', 'decision')] = 'partially masked'
+    return row
+
 def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annotation_fn, clades_df, subclades_df):
     snv_info = []
     multiindex_rows = [[],[]]
-    annotator_fcts = {
-        'Pool' : lambda info: info['Pool'],
-        'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
-        'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
-        'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
-        'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
-        'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
-    }
+    #annotator_fcts = {
+    #    'Pool' : lambda info: info['Pool'],
+    #    'AA change' : lambda info: ", ".join(str(e) if e else '' for e in info['AminoAcidChange']),
+    #    'Ref codon' : lambda info: " ".join(str(e) if e else '' for e in info['RefCodon']),
+    #    'Alt codon' : lambda info: " ".join(str(e) if e else '' for e in info['AltCodon']),
+    #    'Gene' : lambda info: ", ".join(str(e) if e else '' for e in info['Gene']),
+    #    'Product' : lambda info: ", ".join(str(e) if e else '' for e in info['Product'])
+    #}
+    snpEff_fcts = {"annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
+                   "Gene": lambda info: info['ANN'][0].split("|")[3],
+                   "distance (nt)": lambda info: '-'+info['ANN'][0].split("|")[14] \
+                   if info['ANN'][0].split("|")[1].startswith('upstream') \
+                   else info['ANN'][0].split("|")[12].split("/")[0],
+                   "Impact": lambda info: info['ANN'][0].split("|")[2],
+                   "AA change": lambda info: reformat_AA_change(info['ANN'][0].split("|")[10]),
+                   "AA pos": lambda info: info['ANN'][0].split("|")[13]
+                   }
     longshot_fcts = {
         'cov' : lambda info: info['AC'][0] + info['AC'][1] + info['AM'],
         '#ref' : lambda info: info['AC'][0],
@@ -404,7 +474,8 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
         if not run_extended_snv_pipeline(sample, artic_runs, reference_fn, reference_annotation_fn):
             logger.warning('Failed to run extended SNV analysis for sample {}'.format(sample))
     # parse vcf files
-    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=annotator_fcts)
+    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
+    vcf_ann = parse_vcf(fn, info_fcts=)
     vcf_pass = parse_vcf(pass_vcf_fn, constant_fields={'snv_filter': True}, info_fcts=longshot_fcts)
     vcf_fail = parse_vcf(fail_vcf_fn, constant_fields={'snv_filter': False}, info_fcts=longshot_fcts)
     vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)
@@ -444,12 +515,15 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus):
         alignment = mafft([sample_final_consensus], reference_fn)
-        vcf_confirmed = variants_from_alignment(alignment, [sample]).loc[sample]
-        vcf_confirmed['decision'] = True
+        vcf_confirmed, masked_regions = parse_alignment(alignment, [sample])
+        vcf_confirmed = vcf_confirmed.loc[sample]
+        masked_regions = masked_regions.loc[sample]
+        #vcf_confirmed['decision'] = True
         vcf_confirmed = vcf_confirmed['decision'].to_frame()
         vcf_confirmed.columns = pd.MultiIndex.from_product([['final'], vcf_confirmed.columns])
     else:
         vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final'],['decision']]))
+        masked_regions = None
 
     # merge information from individual vcf files to one table
     if not vcf_medaka.loc[vcf_longshot_bias.index.drop_duplicates()].index.equals(vcf_longshot_bias.index):
@@ -481,11 +555,18 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
     snv_info = snv_info.join(vcf_artic_filter, how='left')
     snv_info = snv_info.join(vcf_annotation, how='left')
     snv_info = snv_info.join(vcf_confirmed, how='outer')
-    sel_null = pd.isnull(snv_info[('medaka variant', 'site')])
-    if np.any(sel_null):
-        snv_info.loc[sel_null, ('medaka variant', 'site')] = int(snv_info.loc[sel_null].index.str.extract(r"\D+(\d+)\D+")[0][0])
-        snv_info.loc[sel_null, ('medaka variant', 'ref')] = snv_info.loc[sel_null].index.str.extract(r"(\D+)\d+\D+")[0][0]
-        snv_info.loc[sel_null, ('medaka variant', 'alt')] = snv_info.loc[sel_null].index.str.extract(r"\D+\d+(\D+)")[0][0]
+
+    # SNVs that were detected in the final fasta, but are not present in the previous list of potential SNVs
+    sel = pd.isnull(snv_info[('medaka variant', 'site')])
+    if np.any(sel):
+        snv_info.loc[sel, ('final', 'decision')] = 'introduced'
+        snv_info.loc[sel, ('medaka variant', 'site')] = int(snv_info.loc[sel].index.str.extract(r"\D+(\d+)\D+")[0][0])
+        snv_info.loc[sel, ('medaka variant', 'ref')] = snv_info.loc[sel].index.str.extract(r"(\D+)\d+\D+")[0][0]
+        snv_info.loc[sel, ('medaka variant', 'alt')] = snv_info.loc[sel].index.str.extract(r"\D+\d+(\D+)")[0][0]
+
+    # check if SNVs that are not present in the final fasta are masked with Ns
+    snv_info = snv_info.apply(lambda row: is_masked(row, masked_regions), axis=1)
+
     # add nextstrain clade information
     clade_info = []
     for i,row in snv_info.iterrows():
@@ -494,9 +575,9 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fn, reference_annot
                                           (clades_df['alt'] == row[('medaka variant', 'alt')]),'clade']))
         clades_.extend(list(subclades_df.loc[(subclades_df['site'] == row[('medaka variant', 'site')]) & \
                                              (subclades_df['alt'] == row[('medaka variant', 'alt')]),'clade']))
-        clade_info.append(",".join(clades_))
+        clade_info.append(", ".join(clades_))
     snv_info.insert(loc=0, column=('nextstrain', 'clades'), value=clade_info)
-    return snv_info.sort_values(('medaka variant', 'site'))
+    return snv_info.sort_values(('medaka variant', 'site')), masked_regions
 
 def get_software_versions(sample, artic_runs, results_dir):
     artic_dir = artic_runs.loc[sample, 'artic_dir']

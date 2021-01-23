@@ -7,6 +7,7 @@ from Bio import AlignIO, SeqIO
 
 import logging
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 class alignArgs:
     def __init__(self, **kwargs):
@@ -23,11 +24,15 @@ def mafft(fasta_fns, reference_fn, tmp_fn="clade_assignment_tmp_alignment.fasta"
     alignment = AlignIO.read(tmp_fn, 'fasta')
     if delete_tmp_files:
         os.remove(tmp_fn)
+        os.remove(tmp_fn + '.log')
+        if os.path.exists(tmp_fn + ".insertions.csv"):
+            os.remove(tmp_fn + ".insertions.csv")
     return alignment
 
-def variants_from_alignment(alignment, samples=None):
-    '''translates a Bio.Align.MultipleSeqAlignment object with the reference sequence being at
-    index location 0 to a pandas dataframe containing variant information'''
+def parse_alignment(alignment, samples=None):
+    '''parses a Bio.Align.MultipleSeqAlignment object with the reference sequence being at
+    index location 0 and returns a pandas dataframe containing variant information
+    as well as one containing regions masked with Ns'''
     if not samples:
         samples = [record.id for record in alignment[1:]]
     if type(samples) != list:
@@ -36,54 +41,95 @@ def variants_from_alignment(alignment, samples=None):
     n_aligned = len(alignment)
     for s, sample in enumerate(samples):
         if len(alignment[s+1].seq) != alignment_length:
-            logger.warning('Sample {} seems to be improperly aligned to reference since its alignment string length does not match the one of the reference'.format(sample))
+            logger.warning('Sample {} seems to be improperly aligned to reference since ' +\
+             'its alignment string length does not match the one of the reference'.format(sample))
     assert alignment_length == len(alignment[0].seq)
-    locs = np.empty(shape=(len(alignment), alignment_length), dtype=np.int32)
-    match = np.empty(shape=(len(alignment), alignment_length), dtype=np.int32)
+    sites = np.empty(shape=(n_aligned, alignment_length), dtype=np.int32)
+    match = np.empty(shape=(n_aligned, alignment_length), dtype=np.int32)
+    masked = np.empty(shape=(n_aligned, alignment_length), dtype=np.int32)
     for i in range(alignment_length):
         for s in range(n_aligned):
-            if int((alignment[s, i].upper() == alignment[0, i].upper() or alignment[s, i].upper() == 'N') and alignment[0, i] != '-'):
-                match[s, i] = 1
-            elif alignment[s, i] == '-' and alignment[0, i] != '-':
-                if i > 0:
-                    match[s, i] = match[s, i-1]
+            if alignment[s, i].upper() == alignment[0, i].upper():
+                if alignment[0, i] == '-':
+                    if i > 0:
+                        match[s, i] = match[s, i-1]
+                        masked[s, i] = masked[s, i-1]
+                    else:
+                        match[s, i] = 1
+                        masked[s, i] = 0
                 else:
                     match[s, i] = 1
+                    masked[s, i] = 0
+            elif alignment[s, i].upper() == 'N' and alignment[0, i].upper() != '-':
+                match[s, i] = 1
+                masked[s, i] = 1
             else:
                 match[s, i] = 0
+                masked[s, i] = 0
+
             if alignment[s, i] != '-':
                 if i > 0:
-                    locs[s, i] = locs[s, i-1] + 1
+                    sites[s, i] = sites[s, i-1] + 1
                 else:
-                    locs[s, i] = 1
+                    sites[s, i] = 1
+            else:
+                if i > 0:
+                    sites[s, i] = sites[s, i-1]
+                else:
+                    sites[s, i] = 0
+    # do not count missing terminal sequences as gaps
+    for s in range(1, n_aligned):
+        for i in range(alignment_length):
+            if alignment[s, i] == '-':
+                match[s, i] = 1
+            else:
+                break
+        for i in range(alignment_length):
+            if alignment[s, alignment_length - i - 1] == '-':
+                match[s, alignment_length - i - 1] = 1
+            else:
+                break
+
     variants = []
     multiindex_rows = [[],[]]
     for s, sample in enumerate(samples):
         s += 1
-        edges = np.where(np.pad(match[s,1:], [(1,1)], constant_values=1) != np.pad(match[s,:-1], [(1,1)], constant_values=1))[0]
+        edges = np.where(np.pad(match[s], [(1,1)], constant_values=1)[1:] != np.pad(match[s], [(1,1)], constant_values=1)[:-1])[0]
         edges = edges.reshape((edges.shape[0]//2, 2))
         for start, end in zip(edges[:,0], edges[:,1]):
-            site = locs[0, start]
-            ref = str(alignment[0].seq[start:end]).replace('-', '')
-            alt = str(alignment[s].seq[start:end]).replace('-', '')
+            site = sites[0, start]
+            ref = str(alignment[0].seq[start:end]).replace('-', '').upper()
+            alt = str(alignment[s].seq[start:end]).replace('-', '').upper()
+            if len(alt) != len(ref) and site > 0:
+                # longshot vcf format: left align with one matching base in front of deletion
+                site -= 1
+                ref = str(alignment[0].seq[start-1:end]).replace('-', '').upper()
+                alt = str(alignment[s].seq[start-1:end]).replace('-', '').upper()
             variant = "{}{}{}".format(ref, site, alt)
-            variants.append( (site, ref, alt) )
+            variants.append( (site, ref, alt, 'confirmed') )
             multiindex_rows[0].append(sample)
             multiindex_rows[1].append(variant)
-    df = pd.DataFrame(variants, columns=['site', 'REF', 'ALT'], index=pd.MultiIndex.from_arrays(multiindex_rows, names=("sample", "variant")))
-    return df
-
-def get_masked_bases(fasta_fn):
-    record = next(SeqIO.parse(fasta_fn, 'fasta'))
-    n_sites = np.array([letter.upper() == 'N' for letter in record.seq], dtype=np.int16)
-    n_sites = np.pad(n_sites, [(1,1)], constant_values=0)
-    mask = np.where(n_sites[1:] != n_sites[:-1])[0]
-    mask = mask.reshape((mask.shape[0]//2, 2))
-    mask[:,0] += 1 # 1-based, inclusive
-    df = pd.DataFrame(mask, columns=['start', 'end'])
-    df['width'] = df['end'] - df['start'] + 1
-    total_bases = np.sum(n_sites)
-    return df, total_bases
+    var_df = pd.DataFrame(variants, 
+                          columns=['site', 'ref', 'alt', 'decision'], 
+                          index=pd.MultiIndex.from_arrays(multiindex_rows, names=("sample", "variant")))
+    masked_regions = []
+    multiindex_rows = [[],[]]
+    for s, sample in enumerate(samples):
+        s += 1
+        edges = np.where(np.pad(masked[s], [(1,1)], constant_values=0)[1:] != np.pad(masked[s], [(1,1)], constant_values=0)[:-1])[0]
+        edges = edges.reshape((edges.shape[0]//2, 2))
+        for start, end in zip(edges[:,0], edges[:,1]):
+            site = sites[0, start]
+            masked_ref_bases = len(str(alignment[0].seq[start:end]).replace('-', ''))
+            masked_regions.append( (site, site + masked_ref_bases -1, 
+                                    sites[s, start], sites[s, start] + masked_ref_bases -1, 
+                                    masked_ref_bases) )
+            multiindex_rows[0].append(sample)
+            multiindex_rows[1].append(site)
+    masked_df = pd.DataFrame(masked_regions, 
+                             columns=['reference start', 'reference end', 'consensus start', 'consensus end', 'bases'], 
+                             index=pd.MultiIndex.from_arrays(multiindex_rows, names=("sample", "site")))
+    return var_df, masked_df
 
 def get_low_coverage_regions(cov, threshold):
     below = (cov < threshold).astype(np.int16)

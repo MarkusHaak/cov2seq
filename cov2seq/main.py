@@ -12,7 +12,7 @@ shandler = logging.StreamHandler()
 formatter = logging.Formatter('%(levelname)s: %(message)s')
 shandler.setFormatter(formatter)
 logger.addHandler(shandler)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 class ArgHelpFormatter(argparse.HelpFormatter):
     '''
@@ -76,7 +76,7 @@ def read_configuration(argv, pkg_dir, defaults=None, fields=None):
     else:
         logger.debug("No local configuration file {} found.".format(local_cfg))
     if args.conf_file:
-        update_defaults(args.config_file)
+        update_defaults(args.conf_file)
 
     return conf_parser, remaining_argv, defaults
 
