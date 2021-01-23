@@ -152,6 +152,9 @@ def selected_samples_from_patterns(nanopore_dir, patterns):
 
 def create_sample_reports(args, pkg_dir):
     selected_samples = selected_samples_from_patterns(args.nanopore_dir, args.samples)
+    if len(selected_samples) == 0:
+        logger.error('No samples found in {} matching the given pattern(s)'.format(args.nanopore_dir))
+        exit(1)
     logger.info("Creating reports for the following {} samples:\n{}".format(
         len(selected_samples), ", ".join(selected_samples)))
     reference_fn = os.path.join(args.nextstrain_ncov_dir, "defaults", "reference_seq.gb")

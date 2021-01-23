@@ -347,27 +347,29 @@ def run_extended_snv_pipeline(sample, artic_runs, snpeff_dir, reference_fasta_fn
     merged_vcf_fn = os.path.join(artic_dir, '{}.merged.vcf.gz'.format(sample))
     annotated_vcf_fn = os.path.join(artic_dir, '{}.merged.snpeff.vcf'.format(sample))
     strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
-    for fn in [annotated_vcf_fn, strand_bias_vcf_fn]:
-        if os.path.exists(fn):
-            if not os.access(fn, os.W_OK):
-                logger.warning('Write permissions required for file {}'.format(fn))
-                return False
+    if os.path.exists(annotated_vcf_fn):
+        if not os.access(annotated_vcf_fn, os.W_OK):
+            logger.warning('Write permissions required for file {}'.format(annotated_vcf_fn))
+            return False
     cmds = []
-    # re-run longshot variant calling with strand bias filter
-    if not os.path.exists(reference_fasta_fn + '.fai'):
-        cmd = "samtools faidx {}".format(reference_fasta_fn)
+    if not os.path.exists(strand_bias_vcf_fn):
+        # re-run longshot variant calling with strand bias filter
+        if not os.path.exists(reference_fasta_fn + '.fai'):
+            cmd = "samtools faidx {}".format(reference_fasta_fn)
+            cmds.append(cmd)
+            cmd = "chmod -R g+w {}".format(reference_fasta_fn + '.fai')
+            cmds.append(cmd)
+        cmd = 'longshot -P 0.01 -F -A --no_haps --bam {} --ref {} --out {} --potential_variants {}'.format(
+            sorted_bam_fn, reference_fasta_fn, strand_bias_vcf_fn, merged_vcf_fn)
         cmds.append(cmd)
-    cmd = 'longshot -P 0.01 -F -A --no_haps --bam {} --ref {} --out {} --potential_variants {}'.format(
-        sorted_bam_fn, reference_fasta_fn, strand_bias_vcf_fn, merged_vcf_fn)
-    cmds.append(cmd)
+        cmd = "chmod -R g+w {}".format(strand_bias_vcf_fn)
+        cmds.append(cmd)
     ## run annotation of merged vcf
     cmd = 'cd {} ; java -Xmx8g -jar snpEff.jar MN908947.3 {} >{}'.format(
         snpeff_dir, merged_vcf_fn, annotated_vcf_fn)
     cmds.append(cmd)
-    # chmod
-    for fn in [annotated_vcf_fn, strand_bias_vcf_fn, reference_fasta_fn + '.fai']:
-        cmd = "chmod -R g+w {}".format(fn)
-        cmds.append(cmd)
+    cmd = "chmod -R g+w {}".format(annotated_vcf_fn)
+    cmds.append(cmd)
     for cmd in cmds:
         retval = os.system(cmd)
         if retval != 0:
@@ -575,7 +577,8 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
         snv_info.loc[sel, ('medaka variant', 'alt')] = snv_info.loc[sel].index.str.extract(r"\D+\d+(\D+)")[0][0]
 
     # check if SNVs that are not present in the final fasta are masked with Ns
-    snv_info = snv_info.apply(lambda row: is_masked(row, masked_regions), axis=1)
+    if masked_regions is not None:
+        snv_info = snv_info.apply(lambda row: is_masked(row, masked_regions), axis=1)
 
     # add nextstrain clade information
     clade_info = []
