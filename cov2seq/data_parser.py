@@ -8,6 +8,7 @@ import pandas as pd
 import re
 import subprocess
 import vcf
+from tqdm import tqdm
 from .verify import compare_consensus_to_reference
 
 import logging
@@ -62,7 +63,7 @@ def load_nanopore_info(samples, nanopore_dir):
     logger.info('Loading nanopore run information for selected samples.')
     nanopore_runs_data = []
     artic_runs_data = []
-    for sample in samples:
+    for sample in tqdm(samples):
         logger.debug('{}'.format(sample))
         basedir = os.path.join(nanopore_dir, sample, 'artic-medaka') #TODO: allow other than medaka
         sample_schemes = subdir_paths(basedir, level=2)
@@ -458,7 +459,7 @@ def enrich_introduced_variants(row):
         row[('medaka variant', 'alt')] = alt
     return row
 
-def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df):
+def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df, alignment_tool):
     snv_info = []
     multiindex_rows = [[],[]]
     snpEff_fcts = {'Pool' : lambda info: info['Pool'],
@@ -527,12 +528,14 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     # if a final consensus sequence is present in the results directory,
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus_fn):
-        vcf_confirmed, masked_regions, gap_start, gap_end = compare_consensus_to_reference(sample_final_consensus_fn, reference_fasta_fn)
+        vcf_confirmed, masked_regions, gap_start, gap_end = compare_consensus_to_reference(sample_final_consensus_fn, 
+                                                                                           reference_fasta_fn, 
+                                                                                           alignment_tool=alignment_tool)
         vcf_confirmed = vcf_confirmed[['decision', 'consensus site']]#.to_frame()
         vcf_confirmed.columns = pd.MultiIndex.from_product([['final'], vcf_confirmed.columns])
     else:
-        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final'],['decision', 'consensus site']]))
-        masked_regions = None
+        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final', 'final'],['decision', 'consensus site']]))
+        masked_regions, gap_start, gap_end = None, None, None
 
     # merge information from individual vcf files to one table
     if not vcf_medaka.loc[vcf_longshot_bias.index.drop_duplicates()].index.equals(vcf_longshot_bias.index):
@@ -568,11 +571,6 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     # SNVs that were detected in the final fasta, but are not present in the previous list of potential SNVs
     sel = pd.isnull(snv_info[('medaka variant', 'site')])
     if np.any(sel):
-        breakpoint()
-        #snv_info.loc[sel, ('final', 'decision')] = 'introduced'
-        #snv_info.loc[sel, ('medaka variant', 'site')] = snv_info.loc[sel].index.str.extract(r"\D+(\d+)\D+")[0]
-        #snv_info.loc[sel, ('medaka variant', 'ref')] = snv_info.loc[sel].index.str.extract(r"(\D+)\d+\D+")[0]
-        #snv_info.loc[sel, ('medaka variant', 'alt')] = snv_info.loc[sel].index.str.extract(r"\D+\d+(\D+)")[0]
         snv_info = snv_info.apply(enrich_introduced_variants, axis=1)
 
     # check if SNVs that are not present in the final fasta are masked with Ns

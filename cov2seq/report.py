@@ -87,6 +87,7 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
         ('longshot', 'strand bias') : lambda x: txt_color(x, 'orange') if x==True else f"{x}",
         ('ARTIC', 'snv_filter') : lambda x: txt_color(x, 'red') if x==False else txt_color(x, 'green'),
         ('final', 'decision') : lambda x: txt_color(x, decision_colors.get(x, 'red')),
+        ('final', 'consensus site') : lambda x: str(int(x)),
         ('snpEff', 'impact') : lambda x: txt_color(x, impact_colors.get(x, 'black'))
     }
     snv_table = snv_info_.to_html(float_format=lambda f: "{:.1f}".format(f),
@@ -99,8 +100,10 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
         masked_regions_table = masked_regions.to_html(classes=['table-hover'])
         masked_bases = np.sum(masked_regions['consensus bases'])
         consensus_length = len(next(SeqIO.parse(final_consensus_fn, "fasta")).seq)
+        alignment_start = gap_start + 1
+        alignment_end = len(reference.seq) - gap_end
     else:
-        masked_bases, masked_regions_table, consensus_length = None, None, None
+        masked_bases, masked_regions_table, consensus_length, alignment_start, alignment_end = None, None, None, None, None
     render_dict = {"sample" : sample,
                    "final": final,
                    "header" : header,
@@ -119,8 +122,8 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
                    "masked_bases": masked_bases,
                    "masked_regions_table": masked_regions_table,
                    "consensus_length": consensus_length,
-                   "align_start": gap_start,
-                   "align_end": len(reference.seq) - gap_end}
+                   "alignment_start": alignment_start,
+                   "alignment_end": alignment_end}
     # create output directory for sample if it does not exist already
     dirs = [sample_results_dir, img_dir]
     for d in dirs:
@@ -195,7 +198,7 @@ def create_sample_reports(args, pkg_dir):
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
         snv_info, masked_regions, gap_start, gap_end = load_snv_info(
             sample, artic_runs, args.results_dir, reference_fasta_fn, args.snpeff_dir, clades_df, 
-            subclades_df)
+            subclades_df, args.alignment_tool)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
                                                       args.nextstrain_ncov_dir, repeat_assignment=True)
         software_versions = get_software_versions(sample, artic_runs, args.results_dir)

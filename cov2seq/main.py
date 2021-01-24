@@ -198,6 +198,10 @@ def report(argv=None):
                 data alone works sufficiently well. Regions with a coverage below this 
                 this threshold are highlighted orange.''',
         type=int)
+    report_group.add_argument('--alignment_tool',
+        help='''Alignment tool to use for pairwise alignment of consensus sequences to the reference sequence
+                to verify variants and masked regions.''',
+        choices=['mafft', 'edlib'])
     report_group.add_argument('--export_vcf',
         help='''Export a new vcf file named <sample>.final.vcf to the sample's results directory that
                 contains all confirmed or introduced SNVs that were detected in the final consensus sequence.

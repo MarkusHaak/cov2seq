@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 from augur.align import run as augur_align
-from Bio import AlignIO, SeqIO
+from Bio import AlignIO, SeqIO, pairwise2
 import edlib
 
 import logging
@@ -14,25 +14,31 @@ class alignArgs:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
-def mafft(fasta_fns, reference_fn, tmp_fn="clade_assignment_tmp_alignment.fasta", delete_tmp_files=True):
-    if type(fasta_fns) != list:
-        fasta_fns = [fasta_fns]
-    aln_args = alignArgs(sequences=fasta_fns, output=tmp_fn, method='mafft',
-                         reference_name=None, reference_sequence=reference_fn,
-                         nthreads=4, remove_reference=False,
-                         existing_alignment=False, debug=False, fill_gaps=False)
-    augur_align(aln_args)
-    alignment = AlignIO.read(tmp_fn, 'fasta')
+def align_mafft(fasta_fn, reference_fn, delete_tmp_files=True):
+    sample_record = next(SeqIO.parse(fasta_fn, 'fasta'))
+    reference_record = next(SeqIO.parse(reference_fn, 'fasta'))
+    tmp_intput_fasta_fn = "tmp.fasta.to_align.fasta"
+    tmp_output_fasta_fn = "tmp.fasta.aligned.fasta"
+    tmp_log_fn = "tmp.fasta.aligned.fasta.log"
+    with open(tmp_intput_fasta_fn, 'w') as f:
+        print(">{}\n{}".format(reference_record.id, reference_record.seq), file=f)
+        print(">{}\n{}".format(sample_record.id, sample_record.seq), file=f)
+    cmd = f"mafft --reorder --anysymbol --nomemsave --adjustdirection --thread 1 {tmp_intput_fasta_fn} 1> {tmp_output_fasta_fn} 2> {tmp_log_fn}"
+    if os.system(cmd) != 0:
+        logger.error('Failed to align sequences with mafft. Command used: \n{}'.format(cmd))
+    # parse alignment
+    reference_aligned, query_aligned = None, None
+    for record in AlignIO.read(tmp_output_fasta_fn, "fasta"):
+        if record.id == reference_record.id:
+            reference_aligned = str(record.seq).upper()
+        else:
+            query_aligned= str(record.seq).upper()
+    assert reference_aligned is not None
+    assert query_aligned is not None
     if delete_tmp_files:
-        os.remove(tmp_fn)
-        os.remove(tmp_fn + '.log')
-        if os.path.exists(tmp_fn + ".insertions.csv"):
-            os.remove(tmp_fn + ".insertions.csv")
-    return alignment
-
-def compare_consensus_to_reference(fasta_fn, reference_fn):
-    target_aligned, query_aligned = align_edlib(fasta_fn, reference_fn, k=-1)
-    return parse_global_alignment(target_aligned, query_aligned)
+        for fn in [tmp_intput_fasta_fn, tmp_output_fasta_fn, tmp_log_fn]:
+            os.remove(fn)
+    return reference_aligned, query_aligned
 
 def align_edlib(fasta_fn, reference_fn, k=-1):
     '''Performs a global alignment of a single sample against the reference
@@ -46,6 +52,16 @@ def align_edlib(fasta_fn, reference_fn, k=-1):
                             additionalEqualities=[('N','A'),('N','T'),('N','G'),('N','C')])
     nice = edlib.getNiceAlignment(alignment, query_seq, target_seq)
     return nice['target_aligned'], nice['query_aligned']
+
+def compare_consensus_to_reference(fasta_fn, reference_fn, alignment_tool='mafft'):
+    if alignment_tool == 'mafft':
+        target_aligned, query_aligned = align_mafft(fasta_fn, reference_fn)
+    elif alignment_tool == 'edlib':
+        target_aligned, query_aligned = align_edlib(fasta_fn, reference_fn, k=-1)
+    else:
+        logger.error('Unknown alignment tool: {}'.format(alignment_tool))
+        exit(1)
+    return parse_global_alignment(target_aligned, query_aligned)
 
 def parse_global_alignment(target_aligned, query_aligned):
     '''Parses the equally long strings that result of a global alignment and 
