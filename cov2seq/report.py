@@ -61,7 +61,8 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     decision_colors = {'confirmed' : 'green',
                        'masked': 'gray',
                        'introduced': 'magenta',
-                       'partially masked': 'yellow'}
+                       'partially masked': 'yellow',
+                       'rejected': 'red'}
     impact_colors = {'LOW' : 'black',
                      'MODIFIER': 'blue',
                      'MODERATE': 'orange',

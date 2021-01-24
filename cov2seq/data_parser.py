@@ -445,6 +445,8 @@ def is_masked(row, masked_regions):
              any((masked_regions['reference start'] < var_end) & (masked_regions['reference end'] >= var_end)) or \
              any((masked_regions['reference start'] > var_start) & (masked_regions['reference end'] <= var_end)):
             row[('final', 'decision')] = 'partially masked'
+        else:
+            row[('final', 'decision')] = 'rejected'
     return row
 
 def enrich_introduced_variants(row):
