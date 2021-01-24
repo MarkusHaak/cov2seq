@@ -10,10 +10,6 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-class alignArgs:
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
-
 def align_mafft(fasta_fn, reference_fn, delete_tmp_files=True):
     sample_record = next(SeqIO.parse(fasta_fn, 'fasta'))
     reference_record = next(SeqIO.parse(reference_fn, 'fasta'))

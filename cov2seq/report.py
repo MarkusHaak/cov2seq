@@ -49,7 +49,7 @@ def export_vcf(sample, snv_info, sample_results_dir, reference):
 def sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                   cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
                   amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
-                  masked_regions, gap_start, gap_end, threshold_limit, threshold_low, software_versions, 
+                  masked_regions, gap_start, gap_end, ct_value, threshold_limit, threshold_low, software_versions, 
                   filtered_snvs_only=True):
     img_dir = os.path.join(sample_results_dir, 'img')
     report_fn = os.path.join(sample_results_dir, "{}.report.html".format(sample))
@@ -123,7 +123,8 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
                    "masked_regions_table": masked_regions_table,
                    "consensus_length": consensus_length,
                    "alignment_start": alignment_start,
-                   "alignment_end": alignment_end}
+                   "alignment_end": alignment_end,
+                   "ct": ct_value}
     # create output directory for sample if it does not exist already
     dirs = [sample_results_dir, img_dir]
     for d in dirs:
@@ -169,6 +170,7 @@ def create_sample_reports(args, pkg_dir):
     artic_runs, nanopore_runs = load_nanopore_info(selected_samples, args.nanopore_dir)
     primer_schemes = list(nanopore_runs.scheme.drop_duplicates())
     primers, amplicons = load_primer_schemes(args.primer_schemes_dir, primer_schemes)
+    ct_values = parse_ct_values(args.ct_values_fn)
 
     logger.info(pkg_dir)
     jinja_env = Environment(
@@ -192,6 +194,7 @@ def create_sample_reports(args, pkg_dir):
         if type(sample_nanopore_runs) == pd.core.series.Series:
             sample_nanopore_runs = sample_nanopore_runs.to_frame().T
         sample_artic_stats = artic_runs.loc[sample].to_frame().T
+        sample_ct = ct_values.loc[sample, 'ct'] if sample in ct_values.index else None
         cov_primertrimmed = get_nanopore_coverage_primertrimmed(sample, artic_runs)
         cov_illumina, mapped_illumina = get_illumina_coverage_and_mappings(sample, args.illumina_dir, reference)
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
@@ -206,7 +209,7 @@ def create_sample_reports(args, pkg_dir):
         sample_report(sample, template, sample_results_dir, sample_schemes, cov_primertrimmed, 
                       cov_illumina, cov_sanger, cov_pools, snv_info, reference, reference_genes, 
                       amplicons, sample_nanopore_runs, sample_artic_stats, clade_assignment, parent_clade,
-                      masked_regions, gap_start, gap_end, args.threshold_limit, args.threshold_low, 
+                      masked_regions, gap_start, gap_end, sample_ct, args.threshold_limit, args.threshold_low, 
                       software_versions)
 
         if args.export_vcf and os.path.exists(final_consensus_fn):

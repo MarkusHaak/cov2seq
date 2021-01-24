@@ -102,6 +102,9 @@ def add_main_group_to_parser(parser):
              be updated regularly to get the latest nextstrain clade information.''')
     main_group.add_argument('--snpeff_dir',
         help='''Path to the directory containing the snpEff binaries and the snpEff data directory.''')
+    main_group.add_argument('--ct_values_fn',
+        help='''Csv file containing sample names in the first column and their ct values in the second 
+             column (semicolon column separator, header in first line).''')
     return parser
 
 def check_arguments(args):
@@ -112,6 +115,7 @@ def check_arguments(args):
     args.snpeff_dir = os.path.expanduser(args.snpeff_dir)
     args.illumina_dir = os.path.expanduser(args.illumina_dir)
     args.sanger_dir = os.path.expanduser(args.sanger_dir)
+    args.ct_values_fn = os.path.expanduser(args.ct_values_fn)
     for arg in [args.nanopore_dir,
                 args.primer_schemes_dir,
                 args.results_dir,

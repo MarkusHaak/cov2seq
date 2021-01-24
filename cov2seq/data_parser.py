@@ -459,6 +459,14 @@ def enrich_introduced_variants(row):
         row[('medaka variant', 'alt')] = alt
     return row
 
+def parse_ct_values(ct_values_fn):
+    if os.path.exists(ct_values_fn):
+        df = pd.read_csv(ct_values_fn, sep=';', header=0, names=['sample', 'ct'], dtype={'sample':str, 'ct':np.float32})
+    else:
+        logger.warning('File that should contain sample ct values does not exist: {}'.format(ct_values_fn))
+        df = pd.DataFrame({'sample': pd.Series([], dtype='str'), 'ct':pd.Series([], dtype=np.float32)})
+    return df.set_index('sample')
+
 def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df, alignment_tool):
     snv_info = []
     multiindex_rows = [[],[]]
