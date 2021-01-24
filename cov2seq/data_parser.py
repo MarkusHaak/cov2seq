@@ -8,7 +8,7 @@ import pandas as pd
 import re
 import subprocess
 import vcf
-from .verify import mafft, parse_alignment
+from .verify import compare_consensus_to_reference
 
 import logging
 logger = logging.getLogger()
@@ -446,6 +446,18 @@ def is_masked(row, masked_regions):
             row[('final', 'decision')] = 'partially masked'
     return row
 
+def enrich_introduced_variants(row):
+    if pd.isnull(row[('medaka variant', 'site')]):
+        row[('final', 'decision')] = 'introduced'
+        m = re.fullmatch("(\D*)(\d+)(\D*)", str(row.name))
+        if m is None:
+            loger.error('variant id {} of unknown format'.format(row.name))
+        ref, site, alt = m.group(1,2,3)
+        row[('medaka variant', 'site')] = int(site)
+        row[('medaka variant', 'ref')] = ref
+        row[('medaka variant', 'alt')] = alt
+    return row
+
 def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df):
     snv_info = []
     multiindex_rows = [[],[]]
@@ -471,7 +483,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     fail_vcf_fn = os.path.join(artic_dir, "{}.fail.vcf".format(sample))
     longshot_vcf_fn = os.path.join(artic_dir, "{}.longshot.vcf".format(sample))
     strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
-    sample_final_consensus = os.path.join(results_dir, sample, "{}.final.fasta".format(sample))
+    sample_final_consensus_fn = os.path.join(results_dir, sample, "{}.final.fasta".format(sample))
     # perform snv analysis if vcf files are missing
     if (not os.path.exists(annotated_vcf_fn)) or (not os.path.exists(strand_bias_vcf_fn)):
         if not run_extended_snv_pipeline(sample, artic_runs, snpeff_dir, reference_fasta_fn):
@@ -514,17 +526,12 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     vcf_longshot_bias.columns = pd.MultiIndex.from_product([['longshot'], vcf_longshot_bias.columns])
     # if a final consensus sequence is present in the results directory,
     # align it against the reference to extract information about SNVs that were confirmed or rejected
-    if os.path.exists(sample_final_consensus):
-        alignment = mafft([sample_final_consensus], reference_fasta_fn)
-        vcf_confirmed, masked_regions, gap_start, gap_end = parse_alignment(alignment, [sample])
-        vcf_confirmed = vcf_confirmed.loc[sample]
-        masked_regions = masked_regions.loc[sample]
-        gap_start, gap_end = gap_start[sample], gap_end[sample]
-        #vcf_confirmed['decision'] = True
-        vcf_confirmed = vcf_confirmed['decision'].to_frame()
+    if os.path.exists(sample_final_consensus_fn):
+        vcf_confirmed, masked_regions, gap_start, gap_end = compare_consensus_to_reference(sample_final_consensus_fn, reference_fasta_fn)
+        vcf_confirmed = vcf_confirmed[['decision', 'consensus site']]#.to_frame()
         vcf_confirmed.columns = pd.MultiIndex.from_product([['final'], vcf_confirmed.columns])
     else:
-        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final'],['decision']]))
+        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final'],['decision', 'consensus site']]))
         masked_regions = None
 
     # merge information from individual vcf files to one table
@@ -561,10 +568,12 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     # SNVs that were detected in the final fasta, but are not present in the previous list of potential SNVs
     sel = pd.isnull(snv_info[('medaka variant', 'site')])
     if np.any(sel):
-        snv_info.loc[sel, ('final', 'decision')] = 'introduced'
-        snv_info.loc[sel, ('medaka variant', 'site')] = int(snv_info.loc[sel].index.str.extract(r"\D+(\d+)\D+")[0][0])
-        snv_info.loc[sel, ('medaka variant', 'ref')] = snv_info.loc[sel].index.str.extract(r"(\D+)\d+\D+")[0][0]
-        snv_info.loc[sel, ('medaka variant', 'alt')] = snv_info.loc[sel].index.str.extract(r"\D+\d+(\D+)")[0][0]
+        breakpoint()
+        #snv_info.loc[sel, ('final', 'decision')] = 'introduced'
+        #snv_info.loc[sel, ('medaka variant', 'site')] = snv_info.loc[sel].index.str.extract(r"\D+(\d+)\D+")[0]
+        #snv_info.loc[sel, ('medaka variant', 'ref')] = snv_info.loc[sel].index.str.extract(r"(\D+)\d+\D+")[0]
+        #snv_info.loc[sel, ('medaka variant', 'alt')] = snv_info.loc[sel].index.str.extract(r"\D+\d+(\D+)")[0]
+        snv_info = snv_info.apply(enrich_introduced_variants, axis=1)
 
     # check if SNVs that are not present in the final fasta are masked with Ns
     if masked_regions is not None:

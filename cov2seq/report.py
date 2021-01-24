@@ -97,7 +97,7 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     software_versions_table = software_versions.to_html()
     if final:
         masked_regions_table = masked_regions.to_html(classes=['table-hover'])
-        masked_bases = np.sum(masked_regions['bases'])
+        masked_bases = np.sum(masked_regions['consensus bases'])
         consensus_length = len(next(SeqIO.parse(final_consensus_fn, "fasta")).seq)
     else:
         masked_bases, masked_regions_table, consensus_length = None, None, None

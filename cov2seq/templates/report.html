@@ -100,7 +100,7 @@
     {% if final %}
     <h2>N-masked regions</h2>
 
-    <p>The final consensus sequence is <b>{{ consensus_length }}</b> bases long and aligns to the reference sequence from position <b>{{ align_start }}</b> to <b>{{ align_end }}</b>. In total, <b>{{ masked_bases }}</b> bases in the sequence are masked (N in consensus sequence). The following table lists all masked regions.</p>
+    <p>The final consensus sequence is <b>{{ consensus_length }}</b> bases long and aligns to the reference sequence from position <b>{{ align_start }}</b> to <b>{{ align_end }}</b>. In total, <b>{{ masked_bases }}</b> bases are masked in the consensus sequence (N characters). The following table lists all masked regions.</p>
 
     {{ masked_regions_table }}
     {% endif %}
