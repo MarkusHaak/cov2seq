@@ -193,4 +193,5 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
         plt.savefig(savepath)
     else:
         plt.show()
+    plt.close(fig)
     return

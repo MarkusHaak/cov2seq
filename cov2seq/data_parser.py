@@ -436,7 +436,7 @@ def parse_vcf(vcf_fn, info_fcts={}, constant_fields={}):
     return pd.DataFrame(vcf_data, index=pd.Index(index))
 
 def is_masked(row, masked_regions):
-    if pd.isnull(row[('final', 'decision')]):
+    if pd.isnull(row[('final', 'decision')]) and not pd.isnull(row[('ARTIC', 'snv_filter')]):
         var_start = row[('medaka variant', 'site')]
         var_end = var_start + len(row[('medaka variant', 'ref')]) - 1
         if any((masked_regions['reference start'] <= var_start) & (masked_regions['reference end'] >= var_end)):
