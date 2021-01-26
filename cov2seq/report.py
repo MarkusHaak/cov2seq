@@ -149,15 +149,7 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
             cmd = 'chmod g+w {}'.format(fn)
             os.system(cmd)
 
-def selected_samples_from_patterns(nanopore_dir, patterns):
-    sample_paths = []
-    for pattern in patterns:
-        sample_paths.extend(glob(os.path.join(nanopore_dir, pattern)))
-    selected_samples = [os.path.basename(p)  for p in set(sample_paths)]
-    selected_samples.sort()
-    return selected_samples
-
-def create_sample_reports(args, pkg_dir):
+def create_sample_reports(args):
     selected_samples = selected_samples_from_patterns(args.nanopore_dir, args.samples)
     if len(selected_samples) == 0:
         logger.error('No samples found in {} matching the given pattern(s)'.format(args.nanopore_dir))
@@ -173,7 +165,6 @@ def create_sample_reports(args, pkg_dir):
     primers, amplicons = load_primer_schemes(args.primer_schemes_dir, primer_schemes)
     ct_values = parse_ct_values(args.ct_values_fn)
 
-    logger.info(pkg_dir)
     jinja_env = Environment(
         loader=PackageLoader('cov2seq', 'templates'),
         autoescape=False

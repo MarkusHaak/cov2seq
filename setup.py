@@ -74,7 +74,8 @@ setup(name='cov2seq',
       include_package_data=True,
       zip_safe=False,
       entry_points={"console_scripts": ['cov2seq-update = cov2seq.main:update',
-                                        'cov2seq-report = cov2seq.main:report']},
+                                        'cov2seq-report = cov2seq.main:report',
+                                        'cov2seq-summarize = cov2seq.main:summarize']},
       data_files=data_files,
       package_data={'cov2seq': ['templates/report.html']})
 

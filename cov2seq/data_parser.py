@@ -26,6 +26,14 @@ aa_single_letter_ = {"Gly":"G", "Pro":"P",
                      "Glu":"E", "Asp":"D",
                      "Ser":"S", "Thr":"T"}
 
+def selected_samples_from_patterns(nanopore_dir, patterns):
+    sample_paths = []
+    for pattern in patterns:
+        sample_paths.extend(glob(os.path.join(nanopore_dir, pattern)))
+    selected_samples = [os.path.basename(p)  for p in set(sample_paths)]
+    selected_samples.sort()
+    return selected_samples
+
 def subdir_paths(basedir, level=2):
     basedir = basedir.rstrip(os.path.sep)
     return [d[len(basedir)+1:] for d in glob(os.path.join(*([basedir] + ['*'] * level))) if os.path.isdir(d)]
@@ -59,7 +67,7 @@ def get_nanopore_runs(artic_dir):
         runs_info.append((run, barcode, min_qual, min_len, max_len))
     return runs_info
 
-def load_nanopore_info(samples, nanopore_dir):
+def load_nanopore_info(samples, nanopore_dir, sorted_reads=True, trimmed_reads=True, primertrimmed_reads=True):
     logger.info('Loading nanopore run information for selected samples.')
     nanopore_runs_data = []
     artic_runs_data = []
@@ -76,33 +84,39 @@ def load_nanopore_info(samples, nanopore_dir):
             runs_info = get_nanopore_runs(data_dir)
             for run, barcode, min_qual, min_len, max_len in runs_info:
                 nanopore_runs_data.append((sample, scheme, run, barcode, min_qual, min_len, max_len))
-
         # there must be a single artic directory that holds the merged results off all
         # nanopore runs
         if len(sample_schemes) > 1:
             data_dir = os.path.join(basedir, 'merged')
             if not os.path.isdir(data_dir):
-                logger.error("Multiple different primer schemes for sample {}, but no merged results directory {} was found.".format(sample, data_dir))
+                logger.error("Multiple different primer schemes for sample {}, " +\
+                             "but no merged results directory {} was found.".format(sample, data_dir))
                 exit(1)
         else:
             data_dir = os.path.join(basedir, sample_schemes[0])
+        sample_artic_dict = {'sample':sample,
+                             'artic_dir':data_dir,
+                             'schemes':len(sample_schemes),
+                             'runs':len(nanopore_runs_data)}
         # retrieve artic run information
-        retval = subprocess.check_output(
-            ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".sorted.bam")])
-        mapped = int(retval.decode("utf-8").strip())
-        retval = subprocess.check_output(
-            ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".trimmed.rg.sorted.bam")])
-        mapped_trimmed = int(retval.decode("utf-8").strip())
-        retval = subprocess.check_output(
-            ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".primertrimmed.rg.sorted.bam")])
-        mapped_primertrimmed = int(retval.decode("utf-8").strip())
-        artic_runs_data.append( (sample, data_dir, len(sample_schemes), len(nanopore_runs_data), mapped, mapped_trimmed, mapped_primertrimmed) )
+        if sorted_reads:
+            retval = subprocess.check_output(
+                ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".sorted.bam")])
+            sample_artic_dict['mapped'] = int(retval.decode("utf-8").strip())
+        if trimmed_reads:
+            retval = subprocess.check_output(
+                ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".trimmed.rg.sorted.bam")])
+            sample_artic_dict['mapped_trimmed'] = int(retval.decode("utf-8").strip())
+        if primertrimmed_reads:
+            retval = subprocess.check_output(
+                ["samtools","view","-c","-F","260", os.path.join(data_dir, sample+".primertrimmed.rg.sorted.bam")])
+            sample_artic_dict['mapped_primertrimmed'] = int(retval.decode("utf-8").strip())
+        artic_runs_data.append(sample_artic_dict)
 
     nanopore_runs = pd.DataFrame(nanopore_runs_data, 
                                  columns=['sample', 'scheme', 'run', 'barcode', 'min_qual', 'min_len', 'max_len'])
     nanopore_runs = nanopore_runs.set_index('sample')
-    artic_runs = pd.DataFrame(artic_runs_data,
-                              columns=['sample', 'artic_dir', 'schemes', 'runs', 'mapped', 'mapped_trimmed', 'mapped_primertrimmed'])
+    artic_runs = pd.DataFrame(artic_runs_data)
     artic_runs = artic_runs.set_index('sample')
     assert len(artic_runs.index.duplicated() == 0)
     return artic_runs, nanopore_runs

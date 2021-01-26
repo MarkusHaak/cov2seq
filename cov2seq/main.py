@@ -5,6 +5,7 @@ import pathlib
 import pkg_resources
 import argparse
 from .report import create_sample_reports
+from .summarize import create_resequencing_scheme
 
 import logging
 logger = logging.getLogger()
@@ -36,19 +37,19 @@ def get_package_info():
     pkg_descr = list(pkg_res._get_metadata(pkg_res.PKG_INFO))[-2]
     return pkg_dir, pkg_version, pkg_descr
 
-def read_configuration(argv, pkg_dir, defaults=None, fields=None):
+def read_configuration(argv, pkg_dir, defaults=None, sections=None):
     def update_defaults(conf_file):
         config = configparser.SafeConfigParser()
         config.read([conf_file])
-        data_fields = ['DEFAULT']
-        if fields:
-            data_fields += fields
-        for field in data_fields:
-            defaults.update(dict(config.items(field)))
+        defaults.update(dict(config.items('DEFAULT')))
+        for section in sections:
+            if config.has_section(section):
+                defaults.update(dict(config.items(section)))
 
+    if sections is None:
+        sections = []
     if defaults is None:
         defaults = {}
-
     default_cfg = os.path.join(pkg_dir, "cov2seq", "cov2seq.cfg")
     user_cfg = os.path.join(os.path.expanduser('~'), "cov2seq.cfg")
     local_cfg = "cov2seq.cfg"
@@ -105,9 +106,25 @@ def add_main_group_to_parser(parser):
     main_group.add_argument('--ct_values_fn',
         help='''Csv file containing sample names in the first column and their ct values in the second 
              column (semicolon column separator, header in first line).''')
+    main_group.add_argument('--threshold_limit',
+        help='''Minimal acceptable nanopore coverage. Regions with a coverage below this 
+                this threshold are highlighted red.''',
+        type=int)
+    main_group.add_argument('--threshold_low',
+        help='''Minimal acceptable nanopore coverage to assume that variant calling based on nanopore 
+                data alone works sufficiently well. Regions with a coverage below this 
+                this threshold are highlighted orange.''',
+        type=int)
     return parser
 
 def check_arguments(args):
+    for arg, val in [('nanopore_dir', args.nanopore_dir), ('primer_schemes_dir', args.primer_schemes_dir), 
+                     ('results_dir', args.results_dir), ('nextstrain_ncov_dir', args.nextstrain_ncov_dir), 
+                     ('snpeff_dir', args.snpeff_dir), ('illumina_dir', args.illumina_dir),
+                     ('sanger_dir', args.sanger_dir), ('ct_values_fn', args.ct_values_fn)]:
+        if val is None:
+            logger.error('No value given for required argument: {}'.format(arg))
+            exit(1)
     args.nanopore_dir = os.path.expanduser(args.nanopore_dir)
     args.primer_schemes_dir = os.path.expanduser(args.primer_schemes_dir)
     args.results_dir = os.path.expanduser(args.results_dir)
@@ -117,24 +134,20 @@ def check_arguments(args):
     args.sanger_dir = os.path.expanduser(args.sanger_dir)
     args.ct_values_fn = os.path.expanduser(args.ct_values_fn)
     for arg in [args.nanopore_dir,
-                args.primer_schemes_dir,
                 args.results_dir,
+                args.primer_schemes_dir,
                 args.nextstrain_ncov_dir,
                 args.snpeff_dir]:
         if not os.path.isdir(arg):
             logger.error('Directory {} does not exist but is required.'.format(arg))
             exit(1)
-        if not os.access(arg, os.W_OK):
+        if not os.access(arg, os.W_OK) and arg in [args.nanopore_dir, args.results_dir]:
             logger.error('Write permissions required for directory {}'.format(arg))
             exit(1)
     for arg in [args.illumina_dir,
                 args.sanger_dir]:
         if not os.path.isdir(arg):
             logger.warning('Directory {} does not exist.'.format(arg))
-        else:
-            if not os.access(arg, os.W_OK):
-                logger.error('Write permissions required for directory {}'.format(arg))
-                exit(1)
     return args
 
 def add_help_group_to_parser(parser):
@@ -150,10 +163,10 @@ def add_help_group_to_parser(parser):
         help='Show this help message and exit.')
     return parser
 
-def init_parser(argv, defaults, script_descr="", fields=[]):
+def init_parser(argv, defaults, script_descr="", sections=[]):
     pkg_dir, pkg_version, pkg_descr = get_package_info()
 
-    conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults, fields)
+    conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults, sections)
 
     descr = pkg_descr
     if script_descr:
@@ -165,6 +178,7 @@ def init_parser(argv, defaults, script_descr="", fields=[]):
         formatter_class=ArgHelpFormatter, 
         add_help=False)
     parser.set_defaults(**defaults)
+    breakpoint()
 
     return add_main_group_to_parser(parser), remaining_argv
 
@@ -178,12 +192,34 @@ def update(argv=None):
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
 
+def summarize(argv=None):
+    if argv is None:
+        argv = sys.argv
+    defaults = {} # configuration file independent default values; lowest priority
+    script_descr = "Script for creating figures and tables summarizing and comparing data of multiple samples."
+    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['SUMMARIZE'])
+
+    summarize_group = parser.add_argument_group('Summarize Option Group')
+    summarize_group.add_argument('type',
+        help='Choose which type of summary shall be created.',
+        choices=['resequencing-scheme'])
+    summarize_group.add_argument('-s', '--samples',
+        help='Relative glob patterns matching sample names present in <nanopore_dir> directory.',
+        nargs='+',
+        required=True)
+
+    parser = add_help_group_to_parser(parser)
+    args = parser.parse_args(remaining_argv)
+    args = check_arguments(args)
+    if args.type == 'resequencing-scheme':
+        create_resequencing_scheme(args)
+
 def report(argv=None):
     if argv is None:
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
     script_descr = "This script creates comprehensive reports for one or several samples."
-    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, fields=['REPORT'])
+    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['REPORT'])
 
     report_group = parser.add_argument_group('Report Option Group')
     report_group.add_argument('-s', '--samples',
@@ -193,15 +229,6 @@ def report(argv=None):
     report_group.add_argument('--repeat_assignment',
         help='Repeat the clade assignment even if a clade assignment was already once performed.',
         action='store_true')
-    report_group.add_argument('--threshold_limit',
-        help='''Minimal acceptable nanopore coverage. Regions with a coverage below this 
-                this threshold are highlighted red.''',
-        type=int)
-    report_group.add_argument('--threshold_low',
-        help='''Minimal acceptable nanopore coverage to assume that variant calling based on nanopore 
-                data alone works sufficiently well. Regions with a coverage below this 
-                this threshold are highlighted orange.''',
-        type=int)
     report_group.add_argument('--alignment_tool',
         help='''Alignment tool to use for pairwise alignment of consensus sequences to the reference sequence
                 to verify variants and masked regions.''',
@@ -216,11 +243,9 @@ def report(argv=None):
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
     args = check_arguments(args)
-
-    pkg_dir,_,_ = get_package_info()
-    create_sample_reports(args, pkg_dir)
+    create_sample_reports(args)
 
 if __name__ == '__main__':
-    print('''This script is not intended for standalone command-line use. 
-             Please install package and use cov2seq-update or cov2seq-report instead.''')
+    logger.error('This script is not intended for standalone command-line use. ' +\
+                 'Please install package and use the installed scripts instead.')
     exit(1)
