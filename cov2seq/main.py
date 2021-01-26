@@ -165,21 +165,16 @@ def add_help_group_to_parser(parser):
 
 def init_parser(argv, defaults, script_descr="", sections=[]):
     pkg_dir, pkg_version, pkg_descr = get_package_info()
-
     conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults, sections)
-
     descr = pkg_descr
     if script_descr:
         descr += "\n" + script_descr
-
     parser = argparse.ArgumentParser(
         description=descr,
         parents=[conf_parser],
         formatter_class=ArgHelpFormatter, 
         add_help=False)
     parser.set_defaults(**defaults)
-    breakpoint()
-
     return add_main_group_to_parser(parser), remaining_argv
 
 def update(argv=None):
@@ -187,7 +182,6 @@ def update(argv=None):
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
     parser, remaining_argv = init_parser(argv, defaults)
-
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
@@ -200,13 +194,33 @@ def summarize(argv=None):
     parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['SUMMARIZE'])
 
     summarize_group = parser.add_argument_group('Summarize Option Group')
-    summarize_group.add_argument('type',
+    summarize_group.add_argument('-t', '--type',
         help='Choose which type of summary shall be created.',
+        required=True,
         choices=['resequencing-scheme'])
     summarize_group.add_argument('-s', '--samples',
         help='Relative glob patterns matching sample names present in <nanopore_dir> directory.',
         nargs='+',
         required=True)
+    summarize_group.add_argument('--tolerated_consecutive_bases',
+        help='''Number of tolerated consecutive bases with coverage below <threshold_low> 
+             but above <threshold_limit> so as to not create the need for re-sequencing.''',
+        type=int)
+    summarize_group.add_argument('--scheme',
+        help='''Enforces this scheme to be used for re-sequencing. If none is given, 
+             an individual re-sequencing schedule is created for every schemes that was so far used for
+             sequencing any of the selected samples.''')
+
+    cosmetic_group = parser.add_argument_group('Cosmetic Options Group')
+    cosmetic_group.add_argument('--figwidth',
+        help='''Width of the figure in inches.''',
+        type=int)
+    cosmetic_group.add_argument('--max_cols_per_pool',
+        help='''Maximum columns of per primer pool for horizontal side-by-side presentation.''',
+        type=int)
+    cosmetic_group.add_argument('--fontsize',
+        help='''Font size.''',
+        type=int)
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)

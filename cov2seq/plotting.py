@@ -11,8 +11,11 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-font = {'size'   : 12}
-matplotlib.rc('font', **font)
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    new_cmap = colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)))
+    return new_cmap
 
 def avgcov(cov, window):
     avgs =  np.nanmean(np.pad(cov.astype(float), 
@@ -40,6 +43,8 @@ def make_regions_visible(regions, visibility_threshold=20):
 def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_sanger, cov_pools, cov_limit_regions, cov_low_regions,
                         snv_info, reference, reference_genes, amplicons, final, window=20, snv_annotation_layers=None, 
                         snv_annotation_offset=0, savepath=None):
+    font = {'size'   : 12}
+    matplotlib.rc('font', **font)
     if snv_annotation_layers is None:
         snv_count = len(snv_info.loc[pd.notnull(snv_info[('longshot', 'cov')]) | (snv_info[('final', 'decision')] == 'confirmed')].index.drop_duplicates())
         snv_annotation_layers = int(np.round(snv_count/3 + 0.5))
@@ -193,5 +198,57 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
         plt.savefig(savepath)
     else:
         plt.show()
+    plt.close(fig)
+    return
+
+def plot_resequencing_scheme(selected_samples, scheme_amplicons, mat, 
+                             figwidth=15, max_cols_per_pool=20, fontsize=10):
+    font = {'size'   : fontsize}
+    matplotlib.rc('font', **font)
+    column_mask = np.logical_not(np.all(mat == 0, axis=0))
+    line_mask = np.logical_not(np.all(mat == 0, axis=1))
+    affected_amplicons = list(scheme_amplicons.loc[column_mask].index)
+    affected_samples = [sample for i,sample in enumerate(selected_samples) if line_mask[i]]
+    logger.info("# Samples:   {:>10}".format(np.sum(line_mask)) )
+    logger.info("# Amplicons: {:>10}".format(np.sum(column_mask)) )
+    logger.info("Yellow boxes in the plot indicate that the amplicon contains regions a coverage " + \
+                "belo <threshold_low>, red boxes that the amplicon contains regions with a coverage " +\
+                "below <threshold_limit>")
+    
+    cmap = plt.get_cmap('OrRd')
+    new_cmap = truncate_colormap(cmap, 0.0, .7, n=3)
+    
+    pools = list(set(scheme_amplicons.loc[:, "pool"]))
+    pools.sort()
+    
+    max_per_pool = max([np.sum(np.array(scheme_amplicons.loc[:, 'pool'] == pool) & column_mask) for pool in pools])
+    
+    edgesize = figwidth/len(affected_amplicons)
+    if max_per_pool > max_cols_per_pool:
+        fig,axs = plt.subplots(len(pools), 1, figsize=(figwidth,len(affected_samples)*edgesize*1.1*4))
+    else:
+        fig,axs = plt.subplots(1,len(pools), figsize=(figwidth,len(affected_samples)*edgesize*1.1))
+    for i,ax in enumerate(axs.flatten()):
+        pool_mask = np.array(scheme_amplicons.loc[:, 'pool'] == pools[i])
+        affected_amplicons = list(scheme_amplicons.loc[column_mask & pool_mask].index)
+        affected_amplicons = [s.split('_', 1)[-1] for s in affected_amplicons]
+        data = mat[line_mask,:][:,(column_mask & pool_mask)]
+        data [ data==0. ] = np.nan
+        ax.set_adjustable('box')
+        im = ax.imshow(data, cmap=new_cmap, interpolation=None, vmin=0)
+        ax.set_xticks(np.arange(0.5,np.sum((column_mask & pool_mask)),1), minor=True)
+        ax.set_yticks(np.arange(0.5,np.sum(line_mask),1), minor=True)
+        ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
+
+        ax.xaxis.set_ticks_position('top')
+        ax.set_xticks(range(0,len(affected_amplicons), 1))
+        ax.set_xticklabels(affected_amplicons, rotation=90, ha='center')
+        ax.set_yticks(range(len(affected_samples)))
+        if max_per_pool <= 15:
+            ax.set_xlim((-0.5,max_per_pool-0.5))
+        ax.set_yticklabels(affected_samples)
+        
+        ax.set_title("primer pool {}".format(pools[i]))
+    plt.show()
     plt.close(fig)
     return
