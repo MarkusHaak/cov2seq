@@ -4,6 +4,7 @@ import configparser
 import pathlib
 import pkg_resources
 import argparse
+from .analyze import run_artic_medaka
 from .report import create_sample_reports
 from .summarize import create_resequencing_scheme
 
@@ -177,14 +178,65 @@ def init_parser(argv, defaults, script_descr="", sections=[]):
     parser.set_defaults(**defaults)
     return add_main_group_to_parser(parser), remaining_argv
 
-def update(argv=None):
+def analyze(argv=None):
     if argv is None:
         argv = sys.argv
-    defaults = {} # configuration file independent default values; lowest priority
-    parser, remaining_argv = init_parser(argv, defaults)
+    defaults = {'restrict': [],
+                'exclude': []} # configuration file independent default values; lowest priority
+    script_descr = 'This script automates the execution of ARTIC guppyplex and the ARTIC medaka minion pipeline ' +\
+                   'for a set of sequencing runs.'
+    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['ANALYZE'])
+
+    analyze_group = parser.add_argument_group('Analyze Option Group')
+    analyze_group.add_argument('-i', '--input-directories',
+        help='''Paths to nanopore sequencing run directories of SARS-CoV2 samples. Each directory
+             must contain contain a fastq_pass directory with demultiplexed fastq files sorted into individual
+             barcode subdirectories and the run_configuration.json and primers.json configuration files 
+             used for ARTIC rampart.''',
+        nargs='+',
+        required=True)
+    analyze_group.add_argument('-r', '--restrict',
+        help='Restrict analysis to the specified sample(s).',
+        metavar='sample_id', nargs='+')
+    analyze_group.add_argument('-e', '--exclude', 
+        help='''Exclude the specified sample(s) from the analysis. Samples with "ntc" in their sample IDs 
+             are excluded automatically.''',
+        metavar='sample_id', nargs='+')
+    analyze_group.add_argument('--dry-run',
+        help='only print what would be done without actually executing any commands.', 
+        action='store_true')
+    analyze_group.add_argument('--overwrite', 
+        help='''Overwrite all previous analysis results. Required if a sample directory under <nanopore_dir>,
+             for example if an analysis is repeated or a sample was re-sequenced. In the latter case, ALL run 
+             directories must be given as input directories or else they will not contribute to the sample's 
+             analysis results.''',
+        action='store_true')
+    analyze_group.add_argument('--overview',
+        help='''Parse and print all information present in the configuration files of given input directories
+             without executing an analysis.''',
+        action='store_true')
+    analyze_group.add_argument('--default_scheme',
+        halp='''Default primer scheme that is assumed if no primers.json configuration file exists in an input directory.''')
+    analyze_group.add_argument('--normalize',
+        help='''Normalize coverage to approximately this amount of reads per stand.''',
+        type=int)
+    analyze_group.add_argument('--min_len',
+        help='''Minimum length of reads to be considered in the analysis pipeline. At the moment, this parameter
+             cannot be set for every Amplicon set individually.''',
+        type=int)
+    analyze_group.add_argument('--max_len',
+        help='''Maximum length of reads to be considered in the analysis pipeline. At the moment, this parameter
+             cannot be set for every Amplicon set individually.''',
+        type=int)
+    analyze_group.add_argument('--min_quality',
+        help='Minimum quality of reads to be considered in the analysis pipeline.',
+        type=int)
+    analyze_group.add_argument('-t', '--threads', type=int, help='number of threads', default=6)
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
+    args = check_arguments(args)
+    run_artic_medaka(args)
 
 def summarize(argv=None):
     if argv is None:
@@ -199,7 +251,8 @@ def summarize(argv=None):
         required=True,
         choices=['resequencing-scheme'])
     summarize_group.add_argument('-s', '--samples',
-        help='Relative glob patterns matching sample names present in <nanopore_dir> directory.',
+        help='''Glob patterns matching sample names present in <nanopore_dir> directory.
+             See https://docs.python.org/3/library/glob.html for a description of valid patterns.''',
         nargs='+',
         required=True)
     summarize_group.add_argument('--tolerated_consecutive_bases',
@@ -260,6 +313,6 @@ def report(argv=None):
     create_sample_reports(args)
 
 if __name__ == '__main__':
-    logger.error('This script is not intended for standalone command-line use. ' +\
-                 'Please install package and use the installed scripts instead.')
+    logger.error('This script is not intended to be directly executed with python. ' +\
+                 'Please install package and use the package scripts instead.')
     exit(1)
