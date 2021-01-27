@@ -41,13 +41,9 @@ def scan_input_directories(input_directories, primer_schemes_dir, exclude, restr
             logger.error('Unknown primer scheme: "{scheme}" not in {}'.format(scheme, primer_schemes_dir))
             exit(1)
 
-        min_len, max_len = min_len, max_len
-        min_qual = min_quality
-
         for sample_dict in conf_data['samples']:
             sample = sample_dict['name']
             barcodes = sample_dict['barcodes']
-
             if "ntc" in sample:
                 continue
             if sample in exclude:
@@ -60,11 +56,11 @@ def scan_input_directories(input_directories, primer_schemes_dir, exclude, restr
             if scheme not in samples[sample]:
                 samples[sample][scheme] = {}
             samples[sample][scheme][run_id] = {
-                'run_dir' = input_dir
-                'barcodes' = barcodes
-                'min_qual' = min_qual
-                'min_len' = min_len
-                'max_len' = max_len
+                'run_dir': input_dir
+                'barcodes': barcodes
+                'min_qual': min_qual
+                'min_len': min_len
+                'max_len': max_len
                 }
     return samples
 
