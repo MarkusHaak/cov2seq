@@ -6,35 +6,28 @@ Automation and QC tool for Nanopore sequencing experiments of SARS-CoV2.
 
 Cov2seq needs to be installed on a UNIX based operating system.
 
-It is highly recommended to install cov2seq and all its dependencies in an anaconda3 environment with python version 3.8:
+It is highly recommended to install cov2seq and all its dependencies in an anaconda3 environment. To setup such an environment and install most of the dependencies, ake use of the environment.yml file:
 
 ```
-conda create -n cov2seq python=3.8
+conda env create -f environment.yml
 conda activate cov2seq
-conda config --add channels conda-forge bioconda
 ```
 
-Then install the dependencies using conda and pip:
+Now clone and install the ARTIC fieldbioinformatics software suit. In our lab, we currently use a slightly modified version of the v1.2.1 branch that is using a different approach to normalization suitable for sequencing SARS-CoV2 with rapid kits. If you want to use the official distribution you can do so, they are fully compatible.
 
 ```
-conda install mafft iqtree augur bedtools samtools longshot artic
-```
-
-At the point of writing, setuptools is complaining that Nextstrain augur requires bioconda version 1.76 when running the installation of cov2seq, but version 1.78 is installed by conda. Use pip to fix this issue if you encounter it:
-
-```
-pip uninstall bioconda
-pip install bioconda==1.76
+git clone https://github.com/MarkusHaak/fieldbioinformatics.git
+cd fieldbioinformatics
+python setup.py install
 ```
 
 Cov2seq additionally requires some binaries and files from different git repositories. You can clone them to whatever location you want, but need to change the corresponding entry in the configuration file as explained later. In order to let cov2seq find its location by default, setup the default directory tree as follows:
 
 ```
-cd
-mkdir -p cov2seq/nanopore/samples
-mkdir -p cov2seq/results/samples
-mkdir -p cov2seq/illumina/samples
-mkdir -p cov2seq/sanger/samples
+mkdir -p ~/cov2seq/nanopore/samples
+mkdir -p ~/cov2seq/results/samples
+mkdir -p ~/cov2seq/illumina/samples
+mkdir -p ~/cov2seq/sanger/samples
 ```
 
 Then change into the root of the directory tree and clone the nextstrain ncov github repository:
