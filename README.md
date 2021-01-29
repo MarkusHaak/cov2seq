@@ -30,7 +30,7 @@ mkdir -p ~/cov2seq/illumina/samples
 mkdir -p ~/cov2seq/sanger/samples
 ```
 
-Then change into the root of the directory tree and clone the nextstrain ncov github repository:
+Then change into the root of the directory tree and clone the nextstrain ncov github repository and change the name of the reference that is used by nextstrain to match the name used by ARTIC:
 
 ```
 cd ~/cov2seq

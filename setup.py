@@ -34,9 +34,9 @@ def submodule_data_files(submodule):
             data_files.append(list_entry)
     return data_files
 
-# ensure python version 3.7 or greater is used
-if (sys.version_info.major + .1 * sys.version_info.minor) < 3.7:
-    print('ERROR: please execute setup.py with python version >=3.7')
+# ensure python version 3.6 or greater is used
+if (sys.version_info.major + .1 * sys.version_info.minor) < 3.6:
+    print('ERROR: please execute setup.py with python version >=3.6')
     sys.exit(1)
 
 # get version string from seperate file
