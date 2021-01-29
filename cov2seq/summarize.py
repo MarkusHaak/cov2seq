@@ -1,5 +1,5 @@
 import os
-from .data_parser import *
+from .parse import *
 from .verify import get_low_coverage_regions
 from .plotting import plot_resequencing_scheme
 
