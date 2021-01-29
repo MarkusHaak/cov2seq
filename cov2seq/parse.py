@@ -130,58 +130,39 @@ def load_primer_schemes(primer_schemes_dir, primer_schemes):
         logger.debug('processing scheme {}'.format(scheme))
         scheme_name, scheme_version = scheme.split('/')
 
-        scheme_tsv = os.path.join(primer_schemes_dir, scheme_name, scheme_version, scheme_name + ".tsv")
-        scheme_bed = os.path.join(primer_schemes_dir, scheme_name, scheme_version, scheme_name + ".bed")
-        if not os.path.exists(scheme_tsv):
-            logger.error('.tsv file missing for primer scheme {}'.format(scheme))
-            exit(1)
-        if not os.path.exists(scheme_bed):
-            logger.error('.tsv file missing for primer scheme {}'.format(scheme))
-            exit(1)
+        scheme_insert_fn = os.path.join(primer_schemes_dir, scheme_name, scheme_version, scheme_name + ".insert.bed")
+        scheme_primer_fn = os.path.join(primer_schemes_dir, scheme_name, scheme_version, scheme_name + ".primer.bed")
 
-        df1 = pd.read_csv(scheme_tsv, 
-                          sep='\t', 
-                          header=0, 
-                          names=["name", "pool", "seq", "length", "%gc", "tm"], 
-                          index_col="name", 
-                          dtype={"pool":str, "seq":str, "length":int, "%gc":float, "tm":float})
-        df2 = pd.read_csv(scheme_bed, 
-                          sep='\t', 
-                          header=None, 
-                          names=["reference", "start", "end", "name", "pool", "strand"], 
-                          index_col="name", 
-                          dtype={"start":int, "end":int})
-        primers[scheme] = pd.concat([df1, df2], axis=1)
-        primers[scheme] = primers[scheme].loc[:,~primers[scheme].columns.duplicated()]
-        primer_abrev = []
-        amplicons_ = []
-        for name,row in primers[scheme].iterrows():
-            if "alt" in name.lower():
-                s,num,ori,alt = name.split("_")
-            else:
-                s,num,ori = name.split("_")
-                alt = ""
-            primer_abrev.append(num+ori[0]+alt[3:])
-            amplicons_.append(s + "_" + num)
-        primers[scheme].insert(0,'abbrev', primer_abrev)
-        primers[scheme]['amplicon'] = amplicons_
+        if not os.path.exists(scheme_insert_fn):
+            logger.error('File {} missing for primer scheme {}'.format(scheme_insert_fn, scheme))
+            exit(1)
+        if not os.path.exists(scheme_primer_fn):
+            logger.error('File {} missing for primer scheme {}'.format(scheme_primer_fn, scheme))
+            exit(1)
         
-        amplicon_names = list(set(["_".join(n.split("_")[:2]) for n in list(primers[scheme].index)]))
-        amplicon_names.sort(key=lambda x: int(x.split("_")[-1]))
+        # load primer data
+        df_p = pd.read_csv(scheme_primer_fn, sep='\t', header=None,
+                           names=["reference", "pstart", "pend", "name", "pool", "strand"])
+        df_p['amplicon_number'] = df_p['name'].str.extract(r"{}_(\d+)_*".format(scheme_name)).astype(np.int32)
+        df_p['abbrev'] = df_p['name'].str.extract(r"{}_(\d+_.*)".format(scheme_name))
+        df_p['amplicon'] = scheme_name + '_' + df_p['amplicon_number'].astype(str)
+        # load amplicon data
+        df_i = pd.read_csv(scheme_insert_fn, sep='\t', header=None,
+                           names=["reference", "start", "end", "number", "pool", "strand"])
+        df_i['name'] = scheme_name + '_' + df_i['number'].astype(str)
+        df_i = df_i.set_index('name')
+        pstart = df_p.loc[df_p['strand'] == '+'].groupby('amplicon').apply(lambda x: x.loc[x.pstart.idxmin(), 'pstart'])
+        pend = df_p.loc[df_p['strand'] == '-'].groupby('amplicon').apply(lambda x: x.loc[x.pend.idxmax(), 'pend'])
+        pstart_primer = df_p.loc[df_p['strand'] == '+'].groupby('amplicon').apply(lambda x: x.loc[x.pstart.idxmin(), 'name'])
+        pend_primer = df_p.loc[df_p['strand'] == '-'].groupby('amplicon').apply(lambda x: x.loc[x.pend.idxmax(), 'name'])
+        df_i.loc[pstart.index, 'pstart'] = pstart
+        df_i.loc[pstart.index, 'pend'] = pend
+        df_i.loc[pstart.index, 'leftmost_primer'] = pstart_primer
+        df_i.loc[pstart.index, 'rightmost_primer'] = pend_primer
         
-        amplicon_data = []
-        for amplicon in amplicon_names:
-            indices = [name for name in list(primers[scheme].index) if name.startswith(amplicon+"_")]
-            pstart = primers[scheme].loc[indices][primers[scheme].loc[indices]['strand'] == '+']['start'].min()
-            start = primers[scheme].loc[indices][primers[scheme].loc[indices]['strand'] == '+']['end'].max() + 1
-            end = primers[scheme].loc[indices][primers[scheme].loc[indices]['strand'] == '-']['start'].min() - 1
-            pend = primers[scheme].loc[indices][primers[scheme].loc[indices]['strand'] == '-']['end'].max()
-            pool = primers[scheme].loc[indices]['pool'].iloc[0]
-            mingc = primers[scheme].loc[indices]['%gc'].min()
-            amplicon_data.append( (amplicon, pool, pstart, start, end, pend, mingc) )
-        amplicons[scheme] = pd.DataFrame(amplicon_data, 
-                                         columns=['name', 'pool', 'pstart', 'start', 'end', 'pend', 'mingc'],
-                                         index=amplicon_names)
+        df_p = df_p.set_index('name', drop=True)
+        primers[scheme] = df_p
+        amplicons[scheme] = df_i
     return primers, amplicons
 
 def load_clades_info(nextstrain_ncov_dir):

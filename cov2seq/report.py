@@ -8,7 +8,7 @@ from Bio import SeqIO
 from jinja2 import Environment, PackageLoader, select_autoescape
 import pkg_resources
 from .verify import dataset_completion_test, get_low_coverage_regions
-from .data_parser import *
+from .parse import *
 from .plotting import create_summary_plot
 
 import logging
