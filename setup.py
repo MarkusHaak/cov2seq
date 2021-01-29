@@ -37,7 +37,7 @@ def submodule_data_files(submodule):
 # ensure python version 3.6 or greater is used
 if (sys.version_info.major + .1 * sys.version_info.minor) < 3.6:
     print('ERROR: please execute setup.py with python version >=3.6')
-    sys.exit(1)
+    exit(1)
 
 # get version string from seperate file
 # https://stackoverflow.com/questions/458550/standard-way-to-embed-version-into-python-package
@@ -48,7 +48,7 @@ with open(VERSIONFILE) as f:
     exec(code)
 if not __version__:
     print("ERROR: unable to read version string from file {}".format(VERSIONFILE))
-    exit()
+    exit(1)
 
 DESCR = '''Automation and QC tool for Nanopore sequencing experiments of SARS-CoV2.'''
 
@@ -57,9 +57,6 @@ with open('README.md', 'rb') as readme:
     LONG_DESCR = readme.read().decode()
 
 data_files = [('cov2seq', ['cfg/cov2seq.cfg'])]
-
-for d, files in data_files:
-    print(d, files)
 
 setup(name='cov2seq',
       version=__version__,
@@ -85,7 +82,6 @@ if site_packages_dir:
     pkg_dir = "cov2seq-{}-py{}.egg".format(__version__, sys.version_info.major + .1 * sys.version_info.minor)
     default_cfg = os.path.join(site_packages_dir, pkg_dir, "cov2seq", "cov2seq.cfg")
     user_cfg = os.path.join(os.path.expanduser('~'), "cov2seq.cfg")
-    print(default_cfg)
     if os.path.exists(default_cfg):
         print("\nINFO: default configuration file is found under {}".format(default_cfg))
         print("If (partial) configurations are given in user config file {}, they are prioritized.".format(user_cfg))
