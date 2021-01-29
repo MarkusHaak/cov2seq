@@ -51,9 +51,9 @@ def scan_input_directories(input_directories, primer_schemes_dir, exclude, restr
             if restrict and sample not in restrict:
                 continue
 
-            if sample not in samples:
+            if not sample in samples:
                 samples[sample] = {}
-            if scheme not in samples[sample]:
+            if not scheme in samples[sample]:
                 samples[sample][scheme] = {}
             samples[sample][scheme][run_id] = {
                 'run_dir': input_dir,
@@ -124,13 +124,13 @@ def run_artic_medaka(args):
                         exit(1)
                     run_fq = os.path.join(res_dir, "{}_q{}_{}-{}nt_{}.fastq".format(
                         run_id,
-                        samples[sample][scheme][run_id]['min_qual']
+                        samples[sample][scheme][run_id]['min_qual'],
                         samples[sample][scheme][run_id]['min_len'],
                         samples[sample][scheme][run_id]['max_len'],
                         bc))
                     cmd = 'artic guppyplex --processes {} --quality {} --min-length {} --max-length {} --directory {} --output {}'.format(
                         args.threads, 
-                        samples[sample][scheme][run_id]['min_qual']
+                        samples[sample][scheme][run_id]['min_qual'],
                         samples[sample][scheme][run_id]['min_len'],
                         samples[sample][scheme][run_id]['max_len'],
                         demux_dir,

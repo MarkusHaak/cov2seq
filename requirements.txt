@@ -1,0 +1,10 @@
+biopython
+pyvcf
+numpy
+pandas
+matplotlib
+nextstrain-augur
+Jinja2
+edlib
+tqdm
+clint

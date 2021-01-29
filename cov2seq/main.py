@@ -188,7 +188,7 @@ def analyze(argv=None):
     parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['ANALYZE'])
 
     analyze_group = parser.add_argument_group('Analyze Option Group')
-    analyze_group.add_argument('-i', '--input-directories',
+    analyze_group.add_argument('-i', '--input_directories',
         help='''Paths to nanopore sequencing run directories of SARS-CoV2 samples. Each directory
              must contain contain a fastq_pass directory with demultiplexed fastq files sorted into individual
              barcode subdirectories and the run_configuration.json and primers.json configuration files 
@@ -216,7 +216,7 @@ def analyze(argv=None):
              without executing an analysis.''',
         action='store_true')
     analyze_group.add_argument('--default_scheme',
-        halp='''Default primer scheme that is assumed if no primers.json configuration file exists in an input directory.''')
+        help='''Default primer scheme that is assumed if no primers.json configuration file exists in an input directory.''')
     analyze_group.add_argument('--normalize',
         help='''Normalize coverage to approximately this amount of reads per stand.''',
         type=int)
