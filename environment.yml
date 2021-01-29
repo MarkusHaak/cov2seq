@@ -14,6 +14,7 @@ dependencies:
   - htslib=1.10.2
   - Jinja2
   - longshot=0.4.1
+  - matplotlib
   - medaka=1.0.3
   - minimap2=2.17
   - multiqc
@@ -22,7 +23,7 @@ dependencies:
   - augur
   - nomkl
   - numpy
-  - pandas=0.23.0
+  - pandas
   - pip
   - pysam=0.16.0.1
   - pytest
