@@ -347,6 +347,8 @@ def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov_dir, repeat_as
         os.system(cmd)
         cmd = 'chmod g+w {}'.format(version_fn)
         os.system(cmd)
+        cmd = 'chmod g+w {}'.format(os.path.join(nextstrain_ncov_dir, 'clade_assignment_tmp*'))
+        os.system(cmd)
     try:
         df = pd.read_csv(clade_fn, header=0, sep="\t")
         if len(df) == 0:
@@ -538,17 +540,6 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
         duplicated = list(vcf_artic_filter.index[vcf_artic_filter.index.duplicated()])
         logger.error('Variant(s) {} of sample {} are classified as both pass and fail by ARTIC snv_filter'.format(duplicated, sample))
         exit(1)
-    # extract information from longshot and decorate it with information about the longshot strand bias filter
-    common_columns = list(vcf_longshot.columns.values)
-    common_columns.append('index')
-    vcf_bias['strand bias'] = False
-    vcf_longshot_bias = pd.merge(vcf_longshot.reset_index(), 
-                                 vcf_bias.reset_index(), 
-                                 how='left', 
-                                 left_on=common_columns, 
-                                 right_on=common_columns).fillna(True).set_index('index')
-    vcf_longshot_bias = vcf_longshot_bias[['qual', 'filter', 'cov', '#ref', '#alt', '#amb', 'strand bias']]
-    vcf_longshot_bias.columns = pd.MultiIndex.from_product([['longshot'], vcf_longshot_bias.columns])
     # if a final consensus sequence is present in the results directory,
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus_fn):
@@ -558,35 +549,44 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
         vcf_confirmed = vcf_confirmed[['decision', 'consensus site']]#.to_frame()
         vcf_confirmed.columns = pd.MultiIndex.from_product([['final'], vcf_confirmed.columns])
     else:
-        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_arrays([['final', 'final'],['decision', 'consensus site']]))
+        vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_product([['final'],['decision', 'consensus site']]))
         masked_regions, gap_start, gap_end = None, None, None
 
     # merge information from individual vcf files to one table
-    if not vcf_medaka.loc[vcf_longshot_bias.index.drop_duplicates()].index.equals(vcf_longshot_bias.index):
+    if not vcf_medaka.loc[vcf_longshot.index.drop_duplicates()].index.equals(vcf_longshot.index):
         logger.warning('Number of variants of potentially different pools identified by ' + \
                        'medaka variant does not match the number of entries ' + \
                        'in the longshot output. Medaka variant information is therefore ' + \
                        'dropped for variants where an unambiguous assignment is not possible.')
-        reconstruction = []
-        for index in vcf_longshot_bias.index.drop_duplicates():
-            df_medaka = vcf_medaka.loc[index]
-            if type(df_medaka) == pd.core.series.Series:
-                df_medaka = df_medaka.to_frame().T
-            df_longshot_bias = vcf_longshot_bias.loc[index]
-            if type(df_longshot_bias) == pd.core.series.Series:
-                df_longshot_bias = df_longshot_bias.to_frame().T
-            if len(df_medaka) == len(df_longshot_bias):
-                reconstruction.append(pd.concat([df_medaka, df_longshot_bias], axis=1))
-            else:
-                df_medaka = df_medaka.iloc[:len(df_longshot_bias)]
-                df_medaka[('medaka variant', 'Pool')] = 'N/A'
-                df_medaka[('medaka variant', 'qual')] = np.nan
-                reconstruction.append(pd.concat([df_medaka, df_longshot_bias], axis=1))
-        snv_info = pd.concat(reconstruction, axis=0, sort=False)
-    else:
-        snv_info = pd.concat([vcf_medaka.loc[vcf_longshot_bias.index.drop_duplicates()], vcf_longshot_bias], axis=1)
+    reconstruction = []
+    for index in vcf_longshot.index.drop_duplicates():
+        df_medaka = vcf_medaka.loc[index]
+        if type(df_medaka) == pd.core.series.Series:
+            df_medaka = df_medaka.to_frame().T
+        df_longshot = vcf_longshot.loc[index]
+        if type(df_longshot) == pd.core.series.Series:
+            df_longshot = df_longshot.to_frame().T
+
+        bias_count =  vcf_bias.index.to_list().count(index)
+        if bias_count == len(df_longshot):
+            df_longshot['strand bias'] = 'False'
+        elif bias_count != 0:
+            df_longshot['strand bias'] = 'Mixed'
+        else:
+            df_longshot['strand bias'] = 'True'
+
+        df_longshot.columns = pd.MultiIndex.from_product([['longshot'], df_longshot.columns])
+        if len(df_medaka) == len(df_longshot):
+            reconstruction.append(pd.concat([df_medaka, df_longshot], axis=1))
+        else:
+            df_medaka = df_medaka.iloc[:len(df_longshot)]
+            df_medaka[('medaka variant', 'Pool')] = 'N/A'
+            df_medaka[('medaka variant', 'qual')] = np.nan
+            reconstruction.append(pd.concat([df_medaka, df_longshot], axis=1))
+    snv_info = pd.concat(reconstruction, axis=0, sort=False)
+
     columns = snv_info.columns #save column order, since pd.concat sorts the column names
-    snv_info = pd.concat([snv_info, vcf_medaka.loc[vcf_medaka.index.difference(vcf_longshot_bias.index.drop_duplicates())]]).sort_values(('medaka variant','site'))
+    snv_info = pd.concat([snv_info, vcf_medaka.loc[vcf_medaka.index.difference(vcf_longshot.index.drop_duplicates())]]).sort_values(('medaka variant','site'))
     snv_info = snv_info.loc[:, columns] #restore column order
     snv_info = snv_info.join(vcf_artic_filter, how='left')
     snv_info = snv_info.join(vcf_annotation, how='left')

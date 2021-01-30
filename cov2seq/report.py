@@ -85,7 +85,7 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
         ('longshot', '#ref') : lambda x: "{:.0f}".format(x),
         ('longshot', '#alt') : lambda x: "{:.0f}".format(x),
         ('longshot', '#amb') : lambda x: "{:.0f}".format(x),
-        ('longshot', 'strand bias') : lambda x: txt_color(x, 'orange') if x==True else f"{x}",
+        ('longshot', 'strand bias') : lambda x: txt_color(x, 'orange') if x != 'False' else f"{x}",
         ('ARTIC', 'snv_filter') : lambda x: txt_color(x, 'red') if x==False else txt_color(x, 'green'),
         ('final', 'decision') : lambda x: txt_color(x, decision_colors.get(x, 'red')),
         ('final', 'consensus site') : lambda x: str(int(x)),
