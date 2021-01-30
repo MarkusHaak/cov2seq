@@ -162,9 +162,10 @@ def run_artic_medaka(args, scheme_specifics):
                 exit(1)
 
             # run artic minion medaka
-            cmd = 'cd {} ; artic minion --medaka --medaka-model {} --normalise {} --threads {} --scheme-directory {} --read-file {} "{}" {}'.format(
+            cmd = 'cd {} ; artic minion --medaka --medaka-model {} --min-depth {} --normalise {} --threads {} --scheme-directory {} --read-file {} "{}" {}'.format(
                 res_dir,
                 pore_models.pop(),
+                args.threshold_limit,
                 args.normalize,
                 args.threads,
                 args.primer_schemes_dir,
