@@ -182,7 +182,8 @@ def analyze(argv=None):
     if argv is None:
         argv = sys.argv
     defaults = {'restrict': [],
-                'exclude': []} # configuration file independent default values; lowest priority
+                'exclude': [],
+                'index': 'sample'} # configuration file independent default values; lowest priority
     script_descr = 'This script automates the execution of ARTIC guppyplex and the ARTIC medaka minion pipeline ' +\
                    'for a set of sequencing runs.'
     parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['ANALYZE'])
@@ -212,9 +213,12 @@ def analyze(argv=None):
              analysis results.''',
         action='store_true')
     analyze_group.add_argument('--overview',
-        help='''Parse and print all information present in the configuration files of given input directories
-             without executing an analysis.''',
-        action='store_true')
+        help='''Export information present in the configuration files of given input directories
+              and about how the samples would be analyzed to the given file in tab separated values format, 
+              without actually executing the analysis.''')
+    analyze_group.add_argument('--index',
+        help='''Sort Index of overview table by sequencing run or by sample name.''',
+        choices=['sample', 'run'])
     analyze_group.add_argument('--default_scheme',
         help='''Default primer scheme that is assumed if no primers.json configuration file exists in an input directory.''')
     analyze_group.add_argument('--normalize',

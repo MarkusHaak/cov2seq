@@ -6,7 +6,7 @@ Automation and QC tool for Nanopore sequencing experiments of SARS-CoV2.
 
 Cov2seq needs to be installed on a UNIX based operating system.
 
-It is highly recommended to install cov2seq and all its dependencies in an anaconda3 environment. To setup such an environment and install most of the dependencies, ake use of the environment.yml file:
+It is highly recommended to install cov2seq and all its dependencies in an anaconda3 environment. To setup such an environment and install most of the dependencies, make use of the environment.yml file. This make take a really long time (up to hours).
 
 ```
 conda env create -f environment.yml
@@ -21,7 +21,7 @@ cd fieldbioinformatics
 python setup.py install
 ```
 
-Cov2seq additionally requires some binaries and files from different git repositories. You can clone them to whatever location you want, but need to change the corresponding entry in the configuration file as explained later. In order to let cov2seq find its location by default, setup the default directory tree as follows:
+Cov2seq additionally requires some binaries and other files from different git repositories. You can clone them to whatever location you want, but need to change the corresponding entry in the configuration file as explained later. In order to let cov2seq find its location by default, setup the default directory tree as follows:
 
 ```
 mkdir -p ~/cov2seq/nanopore/samples

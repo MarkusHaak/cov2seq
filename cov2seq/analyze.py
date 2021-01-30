@@ -90,8 +90,12 @@ def run_artic_medaka(args):
                             'max_len': samples[sample][scheme][run_id]['max_len'],
                             'run_dir': samples[sample][scheme][run_id]['run_dir']
                             })
-        df = pd.DataFrame.from_records(data, index=['run_id', 'sample', 'barcode']).sort_index()
-        print(df)
+        if args.index == 'sample':
+            index = ['sample', 'run_id', 'barcode']
+        else:
+            index = ['run_id', 'sample', 'barcode']
+        df = pd.DataFrame.from_records(data, index=index).sort_index()
+        df.to_csv(args.overview, sep='\t')
         exit()
 
     for sample in samples:
