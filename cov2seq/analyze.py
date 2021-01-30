@@ -12,7 +12,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 def scan_input_directories(input_directories, primer_schemes_dir, exclude, restrict,
-                           min_len, max_len, min_qual, default_scheme):
+                           min_len, max_len, min_qual, normalize, default_scheme, 
+                           default_pore_model, scheme_specifics):
     samples = {}
     for input_dir in input_directories:
         if not os.path.exists(input_dir):
@@ -28,6 +29,12 @@ def scan_input_directories(input_directories, primer_schemes_dir, exclude, restr
 
         run_id = conf_data['title']
 
+        if 'poreModel' in conf_data:
+            pore_model = conf_data['poreModel']
+        else:
+            logger.warning('Field "poreModel" missing in configuration file {}, assuming "{}"'.format(conf, default_pore_model))
+            pore_model = default_pore_model
+
         primer_conf = os.path.join(input_dir, "primers.json")
         if not os.path.exists(primer_conf):
             scheme = default_scheme
@@ -38,7 +45,7 @@ def scan_input_directories(input_directories, primer_schemes_dir, exclude, restr
             scheme = primer_conf_data['name']
         scheme_dir = os.path.join(primer_schemes_dir, scheme)
         if not os.path.exists(scheme_dir):
-            logger.error('Unknown primer scheme: "{scheme}" not in {}'.format(scheme, primer_schemes_dir))
+            logger.error('Unknown primer scheme: "{}" not in {}'.format(scheme, primer_schemes_dir))
             exit(1)
 
         for sample_dict in conf_data['samples']:
@@ -58,13 +65,14 @@ def scan_input_directories(input_directories, primer_schemes_dir, exclude, restr
             samples[sample][scheme][run_id] = {
                 'run_dir': input_dir,
                 'barcodes': barcodes,
-                'min_qual': min_qual,
-                'min_len': min_len,
-                'max_len': max_len
+                'min_qual': scheme_specifics['min_qual'].get(scheme, min_qual),
+                'min_len': scheme_specifics['min_len'].get(scheme, min_len),
+                'max_len': scheme_specifics['max_len'].get(scheme, max_len),
+                'pore_model': pore_model
                 }
     return samples
 
-def run_artic_medaka(args):
+def run_artic_medaka(args, scheme_specifics):
     retval = os.system("which artic medaka")
     if retval != 0:
         logger.error('Artic medaka command not found.')
@@ -72,8 +80,8 @@ def run_artic_medaka(args):
 
     cmds = []
     samples = scan_input_directories(args.input_directories, args.primer_schemes_dir, args.exclude, args.restrict,
-                                     args.min_len, args.max_len, args.min_qual, args.default_scheme)
-
+                                     args.min_len, args.max_len, args.min_qual, args.normalize, args.scheme, 
+                                     args.pore_model, scheme_specifics)
     if args.overview:
         data = []
         for sample in samples:
@@ -88,6 +96,7 @@ def run_artic_medaka(args):
                             'min_qual': samples[sample][scheme][run_id]['min_qual'],
                             'min_len': samples[sample][scheme][run_id]['min_len'],
                             'max_len': samples[sample][scheme][run_id]['max_len'],
+                            'pore_model': samples[sample][scheme][run_id]['pore_model'],
                             'run_dir': samples[sample][scheme][run_id]['run_dir']
                             })
         if args.index == 'sample':
@@ -112,7 +121,7 @@ def run_artic_medaka(args):
                 cmds.append(cmd)
 
             joined_fq = os.path.abspath(os.path.join(res_dir, "{}.analyzed_reads.fastq").format(sample))
-            
+            pore_models = set()
             for run_id in samples[sample][scheme]:
                 # copy primer configuration file to result dir
                 primer_conf = os.path.join(samples[sample][scheme][run_id]['run_dir'], "primers.json")
@@ -124,7 +133,7 @@ def run_artic_medaka(args):
                 for bc in samples[sample][scheme][run_id]['barcodes']:
                     demux_dir = os.path.abspath(os.path.join(samples[sample][scheme][run_id]['run_dir'], "fastq_pass", bc)) + "/"
                     if not os.path.exists(demux_dir):
-                        print(colored.red("Demux directory not found: ") + demux_dir)
+                        logger.error("Demux directory not found: {}".format(demux_dir))
                         exit(1)
                     run_fq = os.path.join(res_dir, "{}_q{}_{}-{}nt_{}.fastq".format(
                         run_id,
@@ -144,24 +153,24 @@ def run_artic_medaka(args):
                     cmd = "cat {} >> {}".format(run_fq, joined_fq)
                     cmds.append(cmd)
 
+                    pore_models.add(samples[sample][scheme][run_id]['pore_model'])
+
+            # The new versions of medaka require a pore model. Therefore, sequencing experiments 
+            # performed on different flowcell types cannot be analyzed together
+            if len(pore_models) > 1:
+                logger.error("Selected runs of sample {} where performed on flowcells with at least two different pore models: {}".format(sample, ", ".join(list(pore_models))))
+                exit(1)
+
             # run artic minion medaka
-            cmd = 'cd {} ; artic minion --medaka --normalise {} --threads {} --scheme-directory {} --read-file {} "{}" {}'.format(
+            cmd = 'cd {} ; artic minion --medaka --medaka-model {} --normalise {} --threads {} --scheme-directory {} --read-file {} "{}" {}'.format(
                 res_dir,
+                pore_models.pop(),
                 args.normalize,
                 args.threads,
                 args.primer_schemes_dir,
                 joined_fq,
                 scheme,
                 sample)
-            cmds.append(cmd)
-
-            # re-run longshot variant calling with strand bias filter
-            cmd = 'longshot -P 0.01 -F -A --no_haps --bam {0}/{1}.primertrimmed.rg.sorted.bam --ref {2}/{3}/{4}.reference.fasta --out {0}/{1}.longshot.01.vcf --potential_variants {0}/{1}.merged.vcf.gz'.format(
-                res_dir,
-                sample, 
-                args.primer_schemes_dir,
-                scheme,
-                scheme.split('/')[0])
             cmds.append(cmd)
 
             # writing artic version to file

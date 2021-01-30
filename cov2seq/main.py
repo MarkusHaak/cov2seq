@@ -40,8 +40,8 @@ def get_package_info():
 
 def read_configuration(argv, pkg_dir, defaults=None, sections=None):
     def update_defaults(conf_file):
-        config = configparser.SafeConfigParser()
-        config.read([conf_file])
+        config = configparser.ConfigParser()
+        config.read(conf_file)
         defaults.update(dict(config.items('DEFAULT')))
         for section in sections:
             if config.has_section(section):
@@ -65,22 +65,27 @@ def read_configuration(argv, pkg_dir, defaults=None, sections=None):
         metavar="FILE")
     args, remaining_argv = conf_parser.parse_known_args()
 
+    parsed_files = []
     if os.path.exists(default_cfg):
         update_defaults(default_cfg)
+        parsed_files.append(default_cfg)
     else:
         logger.warning("Package-default configuration file not found.")
     if os.path.exists(user_cfg):
         update_defaults(user_cfg)
+        parsed_files.append(user_cfg)
     else:
         logger.debug("No user configuration file found at {}.".format(user_cfg))
     if os.path.exists(local_cfg):
         update_defaults(local_cfg)
+        parsed_files.append(local_cfg)
     else:
         logger.debug("No local configuration file {} found.".format(local_cfg))
     if args.conf_file:
         update_defaults(args.conf_file)
+        parsed_files.append(args.conf_file)
 
-    return conf_parser, remaining_argv, defaults
+    return conf_parser, remaining_argv, defaults, parsed_files
 
 def add_main_group_to_parser(parser):
     main_group = parser.add_argument_group('Main Options')
@@ -166,7 +171,7 @@ def add_help_group_to_parser(parser):
 
 def init_parser(argv, defaults, script_descr="", sections=[]):
     pkg_dir, pkg_version, pkg_descr = get_package_info()
-    conf_parser, remaining_argv, defaults = read_configuration(argv, pkg_dir, defaults, sections)
+    conf_parser, remaining_argv, defaults, configuration_files = read_configuration(argv, pkg_dir, defaults, sections)
     descr = pkg_descr
     if script_descr:
         descr += "\n" + script_descr
@@ -176,17 +181,33 @@ def init_parser(argv, defaults, script_descr="", sections=[]):
         formatter_class=ArgHelpFormatter, 
         add_help=False)
     parser.set_defaults(**defaults)
-    return add_main_group_to_parser(parser), remaining_argv
+    return add_main_group_to_parser(parser), remaining_argv, configuration_files
+
+def parse_scheme_specifics(args, configuration_files):
+    scheme_specifics = {'min_len':{}, 'max_len':{}, 'min_qual':{}}
+    for fn in configuration_files: # order is from lowest to highest priority
+        config = configparser.SafeConfigParser()
+        config.read(fn)
+        for section in config.sections():
+            if section.startswith('SCHEME:'):
+                scheme = section[7:]
+                for key in config._sections[section].keys():
+                    if key in scheme_specifics:
+                        scheme_specifics[key][scheme] = int(config[section][key])
+    return scheme_specifics
 
 def analyze(argv=None):
     if argv is None:
         argv = sys.argv
     defaults = {'restrict': [],
                 'exclude': [],
-                'index': 'sample'} # configuration file independent default values; lowest priority
+                'index': 'sample',
+                'threads': 8} # configuration file independent default values; lowest priority
     script_descr = 'This script automates the execution of ARTIC guppyplex and the ARTIC medaka minion pipeline ' +\
                    'for a set of sequencing runs.'
-    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['ANALYZE'])
+    parser, remaining_argv, configuration_files = init_parser(argv, defaults, 
+                                                              script_descr=script_descr, 
+                                                              sections=['ANALYZE'])
 
     analyze_group = parser.add_argument_group('Analyze Option Group')
     analyze_group.add_argument('-i', '--input_directories',
@@ -219,35 +240,37 @@ def analyze(argv=None):
     analyze_group.add_argument('--index',
         help='''Sort Index of overview table by sequencing run or by sample name.''',
         choices=['sample', 'run'])
-    analyze_group.add_argument('--default_scheme',
+    analyze_group.add_argument('--pore_model',
+        help='''Default value to pass to medaka\'s --model parameter if field "poreModel" is absent in the 
+             run_configuration.json''')
+    analyze_group.add_argument('--scheme',
         help='''Default primer scheme that is assumed if no primers.json configuration file exists in an input directory.''')
     analyze_group.add_argument('--normalize',
-        help='''Normalize coverage to approximately this amount of reads per stand.''',
+        help='''Target per-strand coverage value for normalization.''',
         type=int)
     analyze_group.add_argument('--min_len',
-        help='''Minimum length of reads to be considered in the analysis pipeline. At the moment, this parameter
-             cannot be set for every Amplicon set individually.''',
+        help='''Default minimum length of reads to be considered in the analysis pipeline. Overwritten by scheme-specific values.''',
         type=int)
     analyze_group.add_argument('--max_len',
-        help='''Maximum length of reads to be considered in the analysis pipeline. At the moment, this parameter
-             cannot be set for every Amplicon set individually.''',
+        help='''Default maximum length of reads to be considered in the analysis pipeline. Overwritten by scheme-specific values.''',
         type=int)
-    analyze_group.add_argument('--min_quality',
-        help='Minimum quality of reads to be considered in the analysis pipeline.',
+    analyze_group.add_argument('--min_qual',
+        help='Default minimum quality of reads to be considered in the analysis pipeline. Overwritten by scheme-specific values.',
         type=int)
-    analyze_group.add_argument('-t', '--threads', type=int, help='number of threads', default=6)
+    analyze_group.add_argument('-t', '--threads', type=int, help='number of threads')
 
     parser = add_help_group_to_parser(parser)
     args = parser.parse_args(remaining_argv)
     args = check_arguments(args)
-    run_artic_medaka(args)
+    scheme_specifics = parse_scheme_specifics(args, configuration_files)
+    run_artic_medaka(args, scheme_specifics)
 
 def summarize(argv=None):
     if argv is None:
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
     script_descr = "Script for creating figures and tables summarizing and comparing data of multiple samples."
-    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['SUMMARIZE'])
+    parser, remaining_argv, _ = init_parser(argv, defaults, script_descr=script_descr, sections=['SUMMARIZE'])
 
     summarize_group = parser.add_argument_group('Summarize Option Group')
     summarize_group.add_argument('-t', '--type',
@@ -290,7 +313,7 @@ def report(argv=None):
         argv = sys.argv
     defaults = {} # configuration file independent default values; lowest priority
     script_descr = "This script creates comprehensive reports for one or several samples."
-    parser, remaining_argv = init_parser(argv, defaults, script_descr=script_descr, sections=['REPORT'])
+    parser, remaining_argv, _ = init_parser(argv, defaults, script_descr=script_descr, sections=['REPORT'])
 
     report_group = parser.add_argument_group('Report Option Group')
     report_group.add_argument('-s', '--samples',
