@@ -141,8 +141,7 @@ def run_artic_medaka(args, scheme_specifics):
                         samples[sample][scheme][run_id]['min_len'],
                         samples[sample][scheme][run_id]['max_len'],
                         bc))
-                    cmd = 'artic guppyplex --processes {} --quality {} --min-length {} --max-length {} --directory {} --output {}'.format(
-                        args.threads, 
+                    cmd = 'artic guppyplex --quality {} --min-length {} --max-length {} --directory {} --output {}'.format(
                         samples[sample][scheme][run_id]['min_qual'],
                         samples[sample][scheme][run_id]['min_len'],
                         samples[sample][scheme][run_id]['max_len'],
