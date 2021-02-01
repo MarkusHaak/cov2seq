@@ -237,15 +237,10 @@ def get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, ref
         sample_schemes = list(sample_schemes.drop_duplicates())
     coverage_pools = {scheme: {} for scheme in sample_schemes}
     for scheme in sample_schemes:
+        scheme_name = scheme.split('/')[0]
         for pool in list(amplicons[scheme]['pool'].drop_duplicates()):
-
-            bam_fn = os.path.join(artic_dir, "{}.primertrimmed.{}.sorted.bam".format(sample, pool))
-            if os.path.exists(bam_fn):
-                coverage_pools[scheme][pool] = get_coverage_from_bam(bam_fn)
-            else:
-                logger.warning(('Bam file {} missing. Coverage of primer scheme {} pool {} ' + \
-                                'will be displayed as zero which might not be the case.').format(bam_fn, scheme, pool))
-                coverage_pools[scheme][pool] = np.zeros(shape=(len(reference.seq),), dtype=np.int32)
+            cov_mask_fn = os.path.join(artic_dir, "{}.coverage_mask.txt.{}_{}.depths".format(sample, scheme_name, pool))
+            coverage_pools[scheme][pool] = np.loadtxt(cov_mask_fn, delimiter='\t', usecols=3, dtype=np.int32)
     return coverage_pools
 
 def get_nanopore_coverage_mask(sample, artic_runs):
