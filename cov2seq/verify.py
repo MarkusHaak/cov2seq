@@ -113,7 +113,7 @@ def parse_global_alignment(target_aligned, query_aligned):
     # make variant table
     variants = []
     index = []
-    edges = np.where(np.pad(match, [(1,1)], constant_values=1)[1:] != np.pad(match, [(1,1)], constant_values=1)[:-1])[0]
+    edges = np.where(np.pad(match, [(1,1)], mode='constant', constant_values=1)[1:] != np.pad(match, [(1,1)], mode='constant', constant_values=1)[:-1])[0]
     edges = edges.reshape((edges.shape[0]//2, 2))
     for start, end in zip(edges[:,0], edges[:,1]):
         site_ref = sites[0, start]
@@ -135,7 +135,7 @@ def parse_global_alignment(target_aligned, query_aligned):
     # make masked regions table
     masked_regions = []
     index = []
-    edges = np.where(np.pad(masked, [(1,1)], constant_values=0)[1:] != np.pad(masked, [(1,1)], constant_values=0)[:-1])[0]
+    edges = np.where(np.pad(masked, [(1,1)], mode='constant', constant_values=0)[1:] != np.pad(masked, [(1,1)], mode='constant', constant_values=0)[:-1])[0]
     edges = edges.reshape((edges.shape[0]//2, 2))
     for start, end in zip(edges[:,0], edges[:,1]):
         site = sites[0, start]
@@ -151,7 +151,7 @@ def parse_global_alignment(target_aligned, query_aligned):
 
 def get_low_coverage_regions(cov, threshold):
     below = (cov < threshold).astype(np.int16)
-    below = np.pad(below, [(1,1)], constant_values=0)
+    below = np.pad(below, [(1,1)], mode='constant', constant_values=0)
     mask = np.where(below[1:] != below[:-1])[0]
     mask = mask.reshape((mask.shape[0]//2, 2))
     mask[:,0] += 1 # 1-based, inclusive

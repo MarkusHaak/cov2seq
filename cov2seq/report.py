@@ -82,14 +82,15 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     formatters = {
         ('longshot', 'qual') : lambda x: txt_color("{:.1f}".format(x), "orange") if x<500. else "{:.1f}".format(x),
         ('longshot', 'cov') : lambda x: txt_color(int(x), coverage_colors.get(int(x), 'black')),
-        ('longshot', '#ref') : lambda x: "{:.0f}".format(x),
-        ('longshot', '#alt') : lambda x: "{:.0f}".format(x),
-        ('longshot', '#amb') : lambda x: "{:.0f}".format(x),
-        ('longshot', 'strand bias') : lambda x: txt_color(x, 'orange') if x != 'False' else f"{x}",
+        ('longshot', '%ref') : lambda x: txt_color("{:.1f}".format(x), "orange") if x>=20. else "{:.1f}".format(x),
+        ('longshot', '%alt') : lambda x: txt_color("{:.1f}".format(x), "orange") if x<80. else "{:.1f}".format(x),
+        ('longshot', '%amb') : lambda x: txt_color("{:.1f}".format(x), "orange") if x>=20. else "{:.1f}".format(x),
         ('ARTIC', 'snv_filter') : lambda x: txt_color(x, 'red') if x==False else txt_color(x, 'green'),
         ('final', 'decision') : lambda x: txt_color(x, decision_colors.get(x, 'red')),
         ('final', 'consensus site') : lambda x: str(int(x)),
-        ('snpEff', 'impact') : lambda x: txt_color(x, impact_colors.get(x, 'black'))
+        ('snpEff', 'impact') : lambda x: txt_color(x, impact_colors.get(x, 'black')),
+        ('medaka variant', 'primer region') : lambda x: txt_color(x, 'orange') if x == True else x,
+        ('medaka variant', 'overlap filter') : lambda x: txt_color(x, 'orange') if x != 'PASS' else x
     }
     snv_table = snv_info_.to_html(float_format=lambda f: "{:.1f}".format(f),
                                   na_rep="", justify="left", classes=['table-hover'],
@@ -114,7 +115,9 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
                    "threshold_low" : threshold_low,
                    "nanopore_runs_table" : nanopore_runs_table,
                    "artic_stats_table" : artic_stats_table,
-                   "medaka_variant_SNVs": len(snv_info),
+                   "medaka_variant_SNVs": snv_info.drop_duplicates(subset=[('medaka variant','site'), 
+                                                                           ('medaka variant','ref'), 
+                                                                           ('medaka variant','alt')], keep='first')[('medaka variant', 'amplicons called')].sum(),
                    "unique_medaka_variant_SNVs": len(snv_info.index.unique()),
                    "longshot_SNVs": len(snv_info_.index.droplevel(1).unique()),
                    "clade_assignment": clade_assignment, 
@@ -193,7 +196,7 @@ def create_sample_reports(args):
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
         snv_info, masked_regions, gap_start, gap_end = load_snv_info(
             sample, artic_runs, args.results_dir, reference_fasta_fn, args.snpeff_dir, clades_df, 
-            subclades_df, args.alignment_tool)
+            subclades_df, args.alignment_tool, primers, amplicons, sample_schemes)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
                                                       args.nextstrain_ncov_dir, repeat_assignment=True)
         software_versions = get_software_versions(sample, artic_runs, args.results_dir)

@@ -102,7 +102,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
     ax2.set_yticks([])
     pool_loc = {}
     for scheme in sample_schemes:
-        for i,amplicon in amplicons[scheme].iterrows():
+        for name,amplicon in amplicons[scheme].iterrows():
             pool = amplicon['pool']
             if pool not in pool_loc:
                 pool_loc[pool] = len(pool_loc)
@@ -119,7 +119,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
                                   amplicon['pend']-amplicon['end'], 1, 
                                   facecolor="gray",
                                   edgecolor=None)
-            ax2.annotate(amplicon['name'].split("_")[-1], 
+            ax2.annotate(name.split("_")[-1], 
                          (amplicon['start']+(amplicon['end']-amplicon['start'])/2, pool_loc[pool]+0.5), 
                          color='w', weight='bold', 
                          fontsize=10, ha='center', va='center')

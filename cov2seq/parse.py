@@ -26,6 +26,14 @@ aa_single_letter_ = {"Gly":"G", "Pro":"P",
                      "Glu":"E", "Asp":"D",
                      "Ser":"S", "Thr":"T"}
 
+def deduce_artic_version(sample, artic_runs):
+    artic_dir = artic_runs.loc[sample, 'artic_dir']
+    longshot_vcf_fn = os.path.join(artic_dir, '{}.longshot.vcf'.format(sample))
+    if os.path.exists(longshot_vcf_fn):
+        return '<1.2.0'
+    else:
+        return '>=1.2.0'
+
 def selected_samples_from_patterns(nanopore_dir, patterns):
     sample_paths = []
     for pattern in patterns:
@@ -339,41 +347,19 @@ def assign_clade(sample, artic_runs, results_dir, nextstrain_ncov_dir, repeat_as
         logger.warning("Clade assignment file is of unknown format: {}".format(clade_fn))
         return ('', 'unknown', '')
 
-def run_extended_snv_pipeline(sample, artic_runs, snpeff_dir, reference_fasta_fn):
-    artic_dir = artic_runs.loc[sample, 'artic_dir']
-    sorted_bam_fn = os.path.join(artic_dir, '{}.primertrimmed.rg.sorted.bam'.format(sample))
-    merged_vcf_fn = os.path.join(artic_dir, '{}.merged.vcf.gz'.format(sample))
-    annotated_vcf_fn = os.path.join(artic_dir, '{}.merged.snpeff.vcf'.format(sample))
-    strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
-    if os.path.exists(annotated_vcf_fn):
-        if not os.access(annotated_vcf_fn, os.W_OK):
-            logger.warning('Write permissions required for file {}'.format(annotated_vcf_fn))
-            return False
+def annotate_vcf_fn(vcf_fn, annotated_vcf_fn, snpeff_dir):
     cmds = []
-    if not os.path.exists(strand_bias_vcf_fn):
-        # re-run longshot variant calling with strand bias filter
-        if not os.path.exists(reference_fasta_fn + '.fai'):
-            cmd = "samtools faidx {}".format(reference_fasta_fn)
-            cmds.append(cmd)
-            cmd = "chmod -R g+w {}".format(reference_fasta_fn + '.fai')
-            cmds.append(cmd)
-        cmd = 'longshot -P 0.01 -F -A --no_haps --bam {} --ref {} --out {} --potential_variants {}'.format(
-            sorted_bam_fn, reference_fasta_fn, strand_bias_vcf_fn, merged_vcf_fn)
-        cmds.append(cmd)
-        cmd = "chmod -R g+w {}".format(strand_bias_vcf_fn)
-        cmds.append(cmd)
-    ## run annotation of merged vcf
     cmd = 'cd {} ; java -Xmx8g -jar snpEff.jar MN908947.3 {} >{}'.format(
-        snpeff_dir, merged_vcf_fn, annotated_vcf_fn)
+        snpeff_dir, vcf_fn, annotated_vcf_fn)
     cmds.append(cmd)
-    cmd = "chmod -R g+w {}".format(annotated_vcf_fn)
+    cmd = "chmod g+w {}".format(annotated_vcf_fn)
     cmds.append(cmd)
     for cmd in cmds:
         retval = os.system(cmd)
         if retval != 0:
             logger.error('Command failed:\n{}'.format(cmd))
             exit(1)
-    return True
+    return
 
 def reformat_AA_change(s):
     # convert from three letter to single letter
@@ -458,6 +444,37 @@ def enrich_introduced_variants(row):
         row[('medaka variant', 'alt')] = alt
     return row
 
+def is_at_primer_site(row, primers, sample_schemes):
+    row['primer region'] = False
+    for scheme in sample_schemes:
+        pdf = primers[scheme]
+        row['primer region'] |= len(pdf.loc[(pdf.pstart <= row.site) & (row.site < pdf.pend)].index) > 0
+    return row
+
+def merge_overlapping_regions(group, amplicons, sample_schemes):
+    site = group.iloc[0]['site']
+    amplicons_at_site = []
+    for scheme in sample_schemes:
+        df = amplicons[scheme]
+        amplicons_at_site.append(df.loc[(site >= df.start) & (site < df.end)])
+    amplicons_at_site = pd.concat(amplicons_at_site, axis=0)
+    pools_at_site = amplicons_at_site.reset_index().apply(lambda row: row['name'].rsplit('_', 1)[0] + '_{}'.format(row.pool), axis=1)
+    group['overlap region'] = len(amplicons_at_site) > 1
+    group['amplicons overlap'] = len(amplicons_at_site)
+    group['amplicons called'] = len(group)
+    overlap_filter = []
+    if set(group['pool']) == set(pools_at_site):
+        overlap_filter.append('PASS')
+    else:
+        if set(pools_at_site) - set(group['pool']) != set():
+            overlap_filter.append('MA') # MA = missing amplicons
+        if set(group['pool']) - set(pools_at_site):
+            overlap_filter.append('EA') # EA = extra amplicons
+    group['overlap filter'] = ', '.join(overlap_filter)
+    group['qual'] = ", ".join(["{:.2f}".format(f) for f in list(group['qual'])])
+    group['index'] = "{}{}{}".format(group.iloc[0]['ref'], group.iloc[0]['site'], group.iloc[0]['alt'])
+    return group.iloc[0]
+
 def parse_ct_values(ct_values_fn):
     if os.path.exists(ct_values_fn):
         df = pd.read_csv(ct_values_fn, sep=';', header=0, names=['sample', 'ct'], dtype={'sample':str, 'ct':np.float32})
@@ -466,11 +483,11 @@ def parse_ct_values(ct_values_fn):
         df = pd.DataFrame({'sample': pd.Series([], dtype='str'), 'ct':pd.Series([], dtype=np.float32)})
     return df.set_index('sample')
 
-def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, subclades_df, alignment_tool):
+def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, 
+                  subclades_df, alignment_tool, primers, amplicons, sample_schemes):
     snv_info = []
     multiindex_rows = [[],[]]
-    snpEff_fcts = {'Pool' : lambda info: info['Pool'],
-                   "annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
+    snpEff_fcts = {"annotation": lambda info: info['ANN'][0].split("|")[1].replace("_", " ").replace("&", " & "),
                    "gene": lambda info: info['ANN'][0].split("|")[3],
                    "distance (nt)": lambda info: '-'+info['ANN'][0].split("|")[14] \
                    if info['ANN'][0].split("|")[1].startswith('upstream') \
@@ -480,33 +497,59 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
                    "AA pos": lambda info: info['ANN'][0].split("|")[13]
                    }
     longshot_fcts = {
-        'cov' : lambda info: int(info['AC'][0] + info['AC'][1] + info['AM']),
-        '#ref' : lambda info: int(info['AC'][0]),
-        '#alt' : lambda info: int(info['AC'][1]),
-        '#amb' : lambda info: int(info['AM'])
+        'cov' : lambda info: int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM']),
+        #'#ref' : lambda info: int(info['AC'][0]),
+        #'#alt' : lambda info: int(info['AC'][1]),
+        #'#amb' : lambda info: int(info['AM']),
+        '%ref' : lambda info: 100*int(info['AC'][0]) / (int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM'])),
+        '%alt' : lambda info: 100*int(info['AC'][1]) / (int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM'])),
+        '%amb' : lambda info: 100*int(info['AM']) / (int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM']))
     }
+    artic_version = deduce_artic_version(sample, artic_runs)
     artic_dir = artic_runs.loc[sample, 'artic_dir']
-    annotated_vcf_fn = os.path.join(artic_dir, "{}.merged.snpeff.vcf".format(sample))
     pass_vcf_fn = os.path.join(artic_dir, "{}.pass.vcf.gz".format(sample))
     fail_vcf_fn = os.path.join(artic_dir, "{}.fail.vcf".format(sample))
-    longshot_vcf_fn = os.path.join(artic_dir, "{}.longshot.vcf".format(sample))
     strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
     sample_final_consensus_fn = os.path.join(results_dir, sample, "{}.final.fasta".format(sample))
-    # perform snv analysis if vcf files are missing
-    if (not os.path.exists(annotated_vcf_fn)) or (not os.path.exists(strand_bias_vcf_fn)):
-        if not run_extended_snv_pipeline(sample, artic_runs, snpeff_dir, reference_fasta_fn):
-            logger.warning('Failed to run extended SNV analysis for sample {}'.format(sample))
-    # parse vcf files
-    vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
+    merged_vcf_fn = os.path.join(artic_dir, '{}.merged.vcf.gz'.format(sample))
+    if artic_version == '<1.2.0':
+        longshot_vcf_fn = os.path.join(artic_dir, "{}.longshot.vcf".format(sample))
+    else:
+        # since artic version 1.2.0, the original merged vcf file is overwritten during the pipeline
+        longshot_vcf_fn = os.path.join(artic_dir, "{}.merged.vcf".format(sample))
+
+    # annotate and parse all individual pool vcf files
+    pool_dfs = []
+    for vcf_fn in glob(os.path.join(artic_dir, "{}.*_[0-9].vcf".format(sample))):
+        pool = re.fullmatch("{}\.(.*_[0-9]).vcf".format(sample), os.path.basename(vcf_fn)).group(1)
+        annotated_vcf_fn = os.path.join(artic_dir, "{}.{}.snpEff.vcf".format(sample, pool))
+        if not os.path.exists(annotated_vcf_fn):
+            annotate_vcf_fn(vcf_fn, annotated_vcf_fn, snpeff_dir)
+        vcf_ann = parse_vcf(annotated_vcf_fn, info_fcts=snpEff_fcts)
+        vcf_ann.insert(0,'pool',pool)
+        pool_dfs.append(vcf_ann)
+    vcf_ann = pd.concat(pool_dfs, axis=0).sort_values(['site', 'pool'])
+
+    # check if primer sites are affected
+    vcf_ann = vcf_ann.apply(lambda row: is_at_primer_site(row, primers, sample_schemes), axis=1)
+
+    # handle overlap regions
+    vcf_ann = vcf_ann.groupby(['site', 'ref', 'alt']).apply(lambda group: merge_overlapping_regions(group, amplicons, sample_schemes))
+    vcf_ann = vcf_ann.set_index('index', drop=True)
+    
+    # parse other vcf files
     vcf_pass = parse_vcf(pass_vcf_fn, constant_fields={'snv_filter': True}, info_fcts=longshot_fcts)
     vcf_fail = parse_vcf(fail_vcf_fn, constant_fields={'snv_filter': False}, info_fcts=longshot_fcts)
-    vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)
-    vcf_bias = parse_vcf(strand_bias_vcf_fn, info_fcts=longshot_fcts)
     if len(vcf_pass) and len(vcf_fail):
-        for index in vcf_pass.index.intersection(vcf_fail):
-            logger.warning('SNV {} is both in the pass and fail .vcf files created by the ARTIC snv_filter tool')
+        for index in set(vcf_pass.index).intersection(set(vcf_fail.index)):
+            logger.error('SNV {} of sample {} is both in the pass and fail .vcf files created by the ARTIC snv_filter tool'.format(index, sample))
+            exit(1)
+    vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)#[['cov', '%ref', '%alt', '%amb']]
+    vcf_longshot.columns = pd.MultiIndex.from_product([['longshot'], vcf_longshot.columns])
+    #vcf_bias = parse_vcf(strand_bias_vcf_fn, info_fcts=longshot_fcts)
+
     # extract medaka variant information
-    vcf_medaka = vcf_ann[['Pool', 'site', 'ref', 'alt', 'qual', 'filter']]
+    vcf_medaka = vcf_ann[['site', 'primer region', 'amplicons overlap', 'amplicons called', 'overlap filter', 'ref', 'alt', 'qual']]
     vcf_medaka.columns = pd.MultiIndex.from_product([['medaka variant'], vcf_medaka.columns])
     # extract and format vcf-annotator information
     vcf_annotation = vcf_ann[['annotation', 'gene', 'distance (nt)', 'impact', 'AA change', 'AA pos']]
@@ -517,10 +560,6 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     vcf_artic_filter.columns = pd.MultiIndex.from_product([['ARTIC'], vcf_artic_filter.columns])
     vcf_artic_filter = vcf_artic_filter.reset_index()
     vcf_artic_filter = vcf_artic_filter.drop_duplicates().set_index('index')
-    if np.any(vcf_artic_filter.index.duplicated()):
-        duplicated = list(vcf_artic_filter.index[vcf_artic_filter.index.duplicated()])
-        logger.error('Variant(s) {} of sample {} are classified as both pass and fail by ARTIC snv_filter'.format(duplicated, sample))
-        exit(1)
     # if a final consensus sequence is present in the results directory,
     # align it against the reference to extract information about SNVs that were confirmed or rejected
     if os.path.exists(sample_final_consensus_fn):
@@ -533,42 +572,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
         vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_product([['final'],['decision', 'consensus site']]))
         masked_regions, gap_start, gap_end = None, None, None
 
-    # merge information from individual vcf files to one table
-    if not vcf_medaka.loc[vcf_longshot.index.drop_duplicates()].index.equals(vcf_longshot.index):
-        logger.warning('Number of variants of potentially different pools identified by ' + \
-                       'medaka variant does not match the number of entries ' + \
-                       'in the longshot output. Medaka variant information is therefore ' + \
-                       'dropped for variants where an unambiguous assignment is not possible.')
-    reconstruction = []
-    for index in vcf_longshot.index.drop_duplicates():
-        df_medaka = vcf_medaka.loc[index]
-        if type(df_medaka) == pd.core.series.Series:
-            df_medaka = df_medaka.to_frame().T
-        df_longshot = vcf_longshot.loc[index]
-        if type(df_longshot) == pd.core.series.Series:
-            df_longshot = df_longshot.to_frame().T
-
-        bias_count =  vcf_bias.index.to_list().count(index)
-        if bias_count == len(df_longshot):
-            df_longshot['strand bias'] = 'False'
-        elif bias_count != 0:
-            df_longshot['strand bias'] = 'Mixed'
-        else:
-            df_longshot['strand bias'] = 'True'
-
-        df_longshot.columns = pd.MultiIndex.from_product([['longshot'], df_longshot.columns])
-        if len(df_medaka) == len(df_longshot):
-            reconstruction.append(pd.concat([df_medaka, df_longshot], axis=1))
-        else:
-            df_medaka = df_medaka.iloc[:len(df_longshot)]
-            df_medaka[('medaka variant', 'Pool')] = 'N/A'
-            df_medaka[('medaka variant', 'qual')] = np.nan
-            reconstruction.append(pd.concat([df_medaka, df_longshot], axis=1))
-    snv_info = pd.concat(reconstruction, axis=0, sort=False)
-
-    columns = snv_info.columns #save column order, since pd.concat sorts the column names
-    snv_info = pd.concat([snv_info, vcf_medaka.loc[vcf_medaka.index.difference(vcf_longshot.index.drop_duplicates())]]).sort_values(('medaka variant','site'))
-    snv_info = snv_info.loc[:, columns] #restore column order
+    snv_info = vcf_medaka.join(vcf_longshot, how='outer')
     snv_info = snv_info.join(vcf_artic_filter, how='left')
     snv_info = snv_info.join(vcf_annotation, how='left')
     snv_info = snv_info.join(vcf_confirmed, how='outer')
