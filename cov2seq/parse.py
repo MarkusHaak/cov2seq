@@ -478,7 +478,7 @@ def parse_ct_values(ct_values_fn):
         df = pd.DataFrame({'sample': pd.Series([], dtype='str'), 'ct':pd.Series([], dtype=np.float32)})
     return df.set_index('sample')
 
-def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_dir, clades_df, 
+def load_snv_info(sample, artic_runs, results_dir, illumina_dir, reference_fasta_fn, snpeff_dir, clades_df, 
                   subclades_df, alignment_tool, primers, amplicons, sample_schemes):
     snv_info = []
     multiindex_rows = [[],[]]
@@ -506,6 +506,7 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
     fail_vcf_fn = os.path.join(artic_dir, "{}.fail.vcf".format(sample))
     strand_bias_vcf_fn = os.path.join(artic_dir, "{}.longshot.01.vcf".format(sample))
     sample_final_consensus_fn = os.path.join(results_dir, sample, "{}.final.fasta".format(sample))
+    sample_illumina_consensus_fn = os.path.join(illumina_dir, sample, "{}.consensus.fasta".format(sample))
     merged_vcf_fn = os.path.join(artic_dir, '{}.merged.vcf.gz'.format(sample))
     if artic_version == '<1.2.0':
         longshot_vcf_fn = os.path.join(artic_dir, "{}.longshot.vcf".format(sample))
@@ -567,9 +568,21 @@ def load_snv_info(sample, artic_runs, results_dir, reference_fasta_fn, snpeff_di
         vcf_confirmed = pd.DataFrame([], columns=pd.MultiIndex.from_product([['final'],['decision', 'consensus site']]))
         masked_regions, gap_start, gap_end = None, None, None
 
+    # if an illumina consensus sequence is present,
+    # align it against the reference too
+    if os.path.exists(sample_illumina_consensus_fn):
+        vcf_illumina,_,_,_ = compare_consensus_to_reference(sample_illumina_consensus_fn, 
+                                                            reference_fasta_fn, 
+                                                            alignment_tool=alignment_tool)
+        vcf_illumina = vcf_illumina[['decision']].to_frame()
+        vcf_illumina.columns = pd.MultiIndex.from_product([['illumina'], vcf_illumina.columns])
+    else:
+        vcf_illumina = pd.DataFrame([], columns=pd.MultiIndex.from_product([['illumina'],['decision']]))
+
     snv_info = vcf_medaka.join(vcf_longshot, how='outer')
     snv_info = snv_info.join(vcf_artic_filter, how='left')
     snv_info = snv_info.join(vcf_annotation, how='left')
+    snv_info = snv_info.join(vcf_illumina, how='outer')
     snv_info = snv_info.join(vcf_confirmed, how='outer')
 
     # SNVs that were detected in the final fasta, but are not present in the previous list of potential SNVs

@@ -76,7 +76,8 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     snv_info_ = snv_info
     if filtered_snvs_only:
         snv_info_ = snv_info.loc[pd.notnull(snv_info[('ARTIC', 'snv_filter')]) |\
-                                 pd.notnull(snv_info[('final', 'decision')])]
+                                 pd.notnull(snv_info[('final', 'decision')]) |\
+                                 pd.notnull(snv_info[('illumina', 'decision')])]
     snv_info_ = snv_info_.reset_index().reset_index().set_index(['index', 'level_0'])
     snv_info_.index.set_names(['variant', ''], inplace=True)
     formatters = {
@@ -195,7 +196,7 @@ def create_sample_reports(args):
         cov_sanger = approximate_sanger_coverage(sample, args.sanger_dir, reference, amplicons, primers)
         cov_pools = get_nanopore_pool_coverage(sample, artic_runs, nanopore_runs, amplicons, reference)
         snv_info, masked_regions, gap_start, gap_end = load_snv_info(
-            sample, artic_runs, args.results_dir, reference_fasta_fn, args.snpeff_dir, clades_df, 
+            sample, artic_runs, args.results_dir, args.illumina_dir, reference_fasta_fn, args.snpeff_dir, clades_df, 
             subclades_df, args.alignment_tool, primers, amplicons, sample_schemes)
         _,clade_assignment, parent_clade = assign_clade(sample, artic_runs, args.results_dir, 
                                                       args.nextstrain_ncov_dir, repeat_assignment=True)
