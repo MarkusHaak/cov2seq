@@ -172,5 +172,3 @@ def dataset_completion_test(sample, artic_runs, nanopore_runs, amplicons):
     for scheme in sample_schemes:
         for pool in list(amplicons[scheme]['pool'].drop_duplicates()):
             bam_fn = os.path.join(artic_dir, "{}.primertrimmed.{}.sorted.bam".format(sample, pool))
-            if not os.path.exists(bam_fn):
-                logger.warning('Bam file of primer pool {} missing for sample {}'.format(pool, sample))

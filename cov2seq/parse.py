@@ -429,7 +429,11 @@ def is_masked(row, masked_regions):
 
 def enrich_introduced_variants(row):
     if pd.isnull(row[('medaka variant', 'site')]):
-        row[('final', 'decision')] = 'introduced'
+        if pd.isnull(row[('final', 'decision')]):
+            row[('illumina', 'decision')] = 'introduced'
+            row[('final', 'decision')] = ''
+        else:
+            row[('final', 'decision')] = 'introduced'
         m = re.fullmatch("(\D*)(\d+)(\D*)", str(row.name))
         if m is None:
             loger.error('variant id {} of unknown format'.format(row.name))
@@ -496,9 +500,9 @@ def load_snv_info(sample, artic_runs, results_dir, illumina_dir, reference_fasta
         #'#ref' : lambda info: int(info['AC'][0]),
         #'#alt' : lambda info: int(info['AC'][1]),
         #'#amb' : lambda info: int(info['AM']),
-        '%ref' : lambda info: 100*int(info['AC'][0]) / (int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM'])),
-        '%alt' : lambda info: 100*int(info['AC'][1]) / (int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM'])),
-        '%amb' : lambda info: 100*int(info['AM']) / (int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM']))
+        '%ref' : lambda info: 100*int(info['AC'][0]) / max((int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM'])), 0.0000001),
+        '%alt' : lambda info: 100*int(info['AC'][1]) / max((int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM'])), 0.0000001),
+        '%amb' : lambda info: 100*int(info['AM']) / max((int(info['AC'][0]) + int(info['AC'][1]) + int(info['AM']), 0.0000001))
     }
     artic_version = deduce_artic_version(sample, artic_runs)
     artic_dir = artic_runs.loc[sample, 'artic_dir']
@@ -540,7 +544,7 @@ def load_snv_info(sample, artic_runs, results_dir, illumina_dir, reference_fasta
         for index in set(vcf_pass.index).intersection(set(vcf_fail.index)):
             logger.error('SNV {} of sample {} is both in the pass and fail .vcf files created by the ARTIC snv_filter tool'.format(index, sample))
             exit(1)
-    vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)#[['cov', '%ref', '%alt', '%amb']]
+    vcf_longshot = parse_vcf(longshot_vcf_fn, info_fcts=longshot_fcts)[['cov', '%ref', '%alt', '%amb']]
     vcf_longshot.columns = pd.MultiIndex.from_product([['longshot'], vcf_longshot.columns])
     #vcf_bias = parse_vcf(strand_bias_vcf_fn, info_fcts=longshot_fcts)
 
@@ -574,7 +578,7 @@ def load_snv_info(sample, artic_runs, results_dir, illumina_dir, reference_fasta
         vcf_illumina,_,_,_ = compare_consensus_to_reference(sample_illumina_consensus_fn, 
                                                             reference_fasta_fn, 
                                                             alignment_tool=alignment_tool)
-        vcf_illumina = vcf_illumina[['decision']].to_frame()
+        vcf_illumina = vcf_illumina[['decision']]
         vcf_illumina.columns = pd.MultiIndex.from_product([['illumina'], vcf_illumina.columns])
     else:
         vcf_illumina = pd.DataFrame([], columns=pd.MultiIndex.from_product([['illumina'],['decision']]))

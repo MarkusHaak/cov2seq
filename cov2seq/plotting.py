@@ -46,10 +46,11 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
     font = {'size'   : 12}
     matplotlib.rc('font', **font)
     if snv_annotation_layers is None:
-        snv_count = len(snv_info.loc[pd.notnull(snv_info[('longshot', 'cov')]) | (snv_info[('final', 'decision')] == 'confirmed')].index.drop_duplicates())
+        #snv_count = len(snv_info.loc[pd.notnull(snv_info[('longshot', 'cov')]) | pd.notnull(snv_info[('final', 'decision')])].index.drop_duplicates())
+        snv_count = len(snv_info)
         snv_annotation_layers = int(np.round(snv_count/3 + 0.5))
     fig = plt.figure(figsize=(15, 8+len(sample_schemes)*0.2))
-    gs = gridspec.GridSpec(4,1,hspace=0.0,height_ratios=[1,0.1*len(sample_schemes),0.05,0.04*snv_annotation_layers])
+    gs = gridspec.GridSpec(4,1,hspace=0.0,height_ratios=[1,0.1*len(sample_schemes),0.05,0.045*snv_annotation_layers])
     ax1 = plt.Subplot(fig, gs[0])
     ax2 = plt.Subplot(fig, gs[1])
     ax3 = plt.Subplot(fig, gs[2])
@@ -71,7 +72,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
     # coverage plots
     if np.any(cov_primertrimmed):
         X, cov_primertrimmed_vals = avgcov(cov_primertrimmed, window)
-        ax1.plot(X, cov_primertrimmed_vals, linewidth=0.5, color="black", label="total Nanopore coverage")
+        ax1.plot(X, cov_primertrimmed_vals, linewidth=0.5, color="black", label="primertrimmed Nanopore coverage")
     if np.any(cov_sanger):
         X, cov_sanger_vals = avgcov(cov_sanger, window)
         ax1.plot(X, cov_sanger_vals*100, linewidth=0.5, color="green", linestyle='dotted', label="approx. Sanger coverage (factor 100)")
@@ -81,7 +82,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
     for scheme in cov_pools:
         for pool in cov_pools[scheme]:
             X, cov_pool_vals = avgcov(cov_pools[scheme][pool], window)
-            ax1.plot(X, cov_pool_vals, linewidth=0.3, color=pool_colors[scheme][pool], label=pool)
+            ax1.plot(X, cov_pool_vals, linewidth=0.3, color=pool_colors[scheme][pool], label="cov. mask {}_{}".format(scheme, pool))
     ax1.legend(loc="upper right", bbox_to_anchor=(1.0,0.95))
     ax1.set_ylabel('coverage ({}nt window)'.format(window))
     # highlight low coverage regions
@@ -143,7 +144,7 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
     # show SNVs
     i = snv_annotation_offset
     prev_index = None
-    for index, v in snv_info.iterrows():
+    for (index,k), v in snv_info.iterrows():
         if index == prev_index:
             continue
         prev_index = index
@@ -156,8 +157,8 @@ def create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_san
         clades_ = v[('nextstrain', 'clades')]
 
         #clades_ = v[('nextstrain', 'clades')]
-        if np.isnan(scov) and decision != 'confirmed':
-            continue
+        #if np.isnan(scov) and np.isnan(decision):
+        #    continue
         height = snv_annotation_layers - 1 - i % snv_annotation_layers
         color = "green" if passed == True else "red"
         ax4.plot([site, site], [snv_annotation_layers+1,height+1], color=color, linewidth=1.)

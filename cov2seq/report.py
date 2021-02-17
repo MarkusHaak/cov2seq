@@ -82,13 +82,14 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
     snv_info_.index.set_names(['variant', ''], inplace=True)
     formatters = {
         ('longshot', 'qual') : lambda x: txt_color("{:.1f}".format(x), "orange") if x<500. else "{:.1f}".format(x),
-        ('longshot', 'cov') : lambda x: txt_color(int(x), coverage_colors.get(int(x), 'black')),
+        ('longshot', 'cov') : lambda x: txt_color(int(x), coverage_colors.get(int(x), 'black')) if not np.isnan(x) else "",
         ('longshot', '%ref') : lambda x: txt_color("{:.1f}".format(x), "orange") if x>=20. else "{:.1f}".format(x),
         ('longshot', '%alt') : lambda x: txt_color("{:.1f}".format(x), "orange") if x<80. else "{:.1f}".format(x),
         ('longshot', '%amb') : lambda x: txt_color("{:.1f}".format(x), "orange") if x>=20. else "{:.1f}".format(x),
         ('ARTIC', 'snv_filter') : lambda x: txt_color(x, 'red') if x==False else txt_color(x, 'green'),
         ('final', 'decision') : lambda x: txt_color(x, decision_colors.get(x, 'red')),
-        ('final', 'consensus site') : lambda x: str(int(x)),
+        ('illumina', 'decision') : lambda x: txt_color(x, decision_colors.get(x, 'red')),
+        ('final', 'consensus site') : lambda x: str(int(x)) if not np.isnan(x) else "",
         ('snpEff', 'impact') : lambda x: txt_color(x, impact_colors.get(x, 'black')),
         ('medaka variant', 'primer region') : lambda x: txt_color(x, 'orange') if x == True else x,
         ('medaka variant', 'overlap filter') : lambda x: txt_color(x, 'orange') if x != 'PASS' else x
@@ -142,7 +143,7 @@ def sample_report(sample, template, sample_results_dir, sample_schemes, cov_prim
             exit(1)
 
     create_summary_plot(sample_schemes, cov_primertrimmed, cov_illumina, cov_sanger, cov_pools, 
-                        cov_limit_regions, cov_low_regions, snv_info, reference, reference_genes,
+                        cov_limit_regions, cov_low_regions, snv_info_, reference, reference_genes,
                         amplicons, final, savepath=summary_plot_fn)
 
     with open(report_fn, 'w') as f:

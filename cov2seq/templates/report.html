@@ -97,7 +97,7 @@
 
     <h2>Potential variants</h2>
 
-    <p>A total of <b>{{ unique_medaka_variant_SNVs|e }}</b> potential SNVs (<b>{{ medaka_variant_SNVs|e }}</b> with duplicates in overlapping amplicon regions) detected by Medaka variant were passed to longshot for further filtering. Thereof, <b>{{ longshot_SNVs }}</b> met the longshot criteria for being considered potential variants. These are displayed in the table below, in addition to variants that were manually introduced to the final fasta file, if present.<br>Filter value descriptions:<br> MA : missing variant call in >1 amplicon in overlap regions, EA : variant called on extra amplicon that is not in overlapping region, dp : depth of 500x coverage exceeded</p>
+    <p>A total of <b>{{ unique_medaka_variant_SNVs|e }}</b> potential SNVs (<b>{{ medaka_variant_SNVs|e }}</b> counting duplicates in overlapping amplicon regions) detected by Medaka variant were passed to longshot for further filtering. Thereof, <b>{{ longshot_SNVs }}</b> passed the longshot filter for being considered potential variants. These are displayed in the table below, in addition to variants that were manually introduced to the final fasta file, if present.<br>Filter value descriptions:<br> MA : missing variant call in >1 amplicon in overlap regions, EA : variant called on extra amplicon that is not in overlapping region, dp : depth of 500x coverage exceeded</p>
 
     {{ snv_table }}
 
